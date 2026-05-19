@@ -12,13 +12,18 @@ from zk2 import __version__
 from zk2.admin.router import router as admin_router
 from zk2.auth.router import public_router as access_router
 from zk2.auth.router import router as auth_router
+from zk2.bots.router import router as bots_router
+from zk2.chat.ws import router as chat_ws_router
 from zk2.config import get_settings
+from zk2.core.arq import close_arq
 from zk2.core.db import dispose_engine, get_engine
 from zk2.core.errors import register_exception_handlers
 from zk2.core.logging import configure_logging
 from zk2.core.redis_client import close_redis
 from zk2.core.telemetry import instrument_sqlalchemy_engine, setup_telemetry
 from zk2.health import router as health_router
+from zk2.llm.router import router as providers_router
+from zk2.sources.router import router as sources_router
 
 
 @asynccontextmanager
@@ -31,6 +36,7 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
     finally:
         await dispose_engine()
         await close_redis()
+        await close_arq()
 
 
 def create_app() -> FastAPI:
@@ -61,6 +67,10 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(access_router)
     app.include_router(admin_router)
+    app.include_router(providers_router)
+    app.include_router(sources_router)
+    app.include_router(bots_router)
+    app.include_router(chat_ws_router)
 
     return app
 

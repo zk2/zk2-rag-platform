@@ -1,0 +1,57 @@
+"""Pydantic DTOs for sources."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+
+
+class _Dto(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DirectoryCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    parent_id: int | None = None
+
+
+class UrlCreate(BaseModel):
+    url: HttpUrl
+    parent_id: int | None = None
+
+
+class SitemapImport(BaseModel):
+    base_url: HttpUrl
+    parent_id: int | None = None
+    limit: int = Field(50, ge=1, le=500)
+
+
+class SourceDto(_Dto):
+    id: int
+    type: str
+    name: str
+    status: str
+    error: str | None
+    meta: dict[str, Any] | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class SourceNodeDto(BaseModel):
+    id: int
+    type: str
+    name: str
+    status: str
+    children: list[SourceNodeDto] = []
+
+
+SourceNodeDto.model_rebuild()
+
+
+class ChunkDto(_Dto):
+    id: int
+    ordinal: int
+    text: str
+    tokens: int
