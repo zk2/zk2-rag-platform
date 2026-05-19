@@ -1,0 +1,134 @@
+.DEFAULT_GOAL := help
+SHELL := /bin/bash
+
+API_DIR := apps/api
+WEB_DIR := apps/web
+COMPOSE := docker compose --env-file .env -f infra/compose/docker-compose.dev.yml
+
+.PHONY: help
+help: ## Show this help
+	@awk 'BEGIN {FS = ":.*?## "}; /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+## ── Bootstrap ────────────────────────────────────────────────
+
+.PHONY: check
+check: ## Verify required tools (uv, pnpm, node, docker, ...) are installed
+	@bash scripts/check-tools.sh
+
+.PHONY: install
+install: check install-api install-web ## Verify tools, then install all deps
+
+.PHONY: install-api
+install-api: ## Install Python deps via uv
+	cd $(API_DIR) && uv sync --all-extras
+
+.PHONY: install-web
+install-web: ## Install Node deps via pnpm
+	pnpm install
+
+## ── Local dev ────────────────────────────────────────────────
+
+.PHONY: up
+up: ## Start infra (postgres, redis, mailhog, ...)
+	$(COMPOSE) up -d
+
+.PHONY: down
+down: ## Stop infra
+	$(COMPOSE) down
+
+.PHONY: logs
+logs: ## Follow infra logs
+	$(COMPOSE) logs -f
+
+.PHONY: dev
+dev: up ## Start full dev stack (infra + api + web)
+	@echo "Infra is up. In separate terminals run:"
+	@echo "  make dev-api"
+	@echo "  make dev-web"
+
+.PHONY: dev-api
+dev-api: ## Run API with hot reload
+	cd $(API_DIR) && uv run uvicorn zk2.main:app --reload --port 8000
+
+.PHONY: dev-web
+dev-web: ## Run web with hot reload
+	pnpm --filter web dev
+
+.PHONY: dev-worker
+dev-worker: ## Run Arq worker
+	cd $(API_DIR) && uv run arq zk2.jobs.WorkerSettings
+
+## ── Database ─────────────────────────────────────────────────
+
+.PHONY: migrate
+migrate: ## Apply migrations
+	cd $(API_DIR) && uv run alembic upgrade head
+
+.PHONY: migrate-down
+migrate-down: ## Rollback one migration
+	cd $(API_DIR) && uv run alembic downgrade -1
+
+.PHONY: migrate-new
+migrate-new: ## Generate new migration: make migrate-new name="add_xxx"
+	cd $(API_DIR) && uv run alembic revision --autogenerate -m "$(name)"
+
+.PHONY: seed
+seed: ## Seed super-admin + demo data
+	cd $(API_DIR) && uv run python -m scripts.seed
+
+## ── Quality ──────────────────────────────────────────────────
+
+.PHONY: lint
+lint: lint-api lint-web ## Lint everything
+
+.PHONY: lint-api
+lint-api: ## Ruff + mypy on api
+	cd $(API_DIR) && uv run ruff check src tests
+	cd $(API_DIR) && uv run ruff format --check src tests
+	cd $(API_DIR) && uv run mypy src
+
+.PHONY: lint-web
+lint-web: ## ESLint + tsc on web
+	pnpm --filter web lint
+	pnpm --filter web typecheck
+
+.PHONY: format
+format: ## Auto-format everything
+	cd $(API_DIR) && uv run ruff format src tests
+	cd $(API_DIR) && uv run ruff check --fix src tests
+	pnpm prettier --write "apps/web/src/**/*.{ts,tsx,js,jsx,json,md}"
+
+## ── Tests ────────────────────────────────────────────────────
+
+.PHONY: test
+test: test-api test-web ## Run all tests
+
+.PHONY: test-api
+test-api: ## Pytest with testcontainers
+	cd $(API_DIR) && uv run pytest -v
+
+.PHONY: test-web
+test-web: ## Vitest
+	pnpm --filter web test
+
+.PHONY: e2e
+e2e: ## Playwright e2e
+	pnpm --filter web e2e
+
+## ── Types ────────────────────────────────────────────────────
+
+.PHONY: gen-types
+gen-types: ## Regenerate TS types from API OpenAPI
+	cd $(API_DIR) && uv run python -c "import json; from zk2.main import app; print(json.dumps(app.openapi()))" > ../../packages/shared-types/openapi.json
+	pnpm --filter shared-types gen
+
+## ── Clean ────────────────────────────────────────────────────
+
+.PHONY: clean
+clean: ## Remove build artefacts and caches
+	find . -type d -name __pycache__ -prune -exec rm -rf {} +
+	find . -type d -name .pytest_cache -prune -exec rm -rf {} +
+	find . -type d -name .mypy_cache -prune -exec rm -rf {} +
+	find . -type d -name .ruff_cache -prune -exec rm -rf {} +
+	find . -type d -name .next -prune -exec rm -rf {} +
+	find . -type d -name node_modules -prune -exec rm -rf {} +

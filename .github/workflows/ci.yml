@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api-lint:
+    name: API — lint + typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.4"
+          enable-cache: true
+      - name: Set up Python
+        run: uv python install 3.12
+      - name: Install deps
+        working-directory: apps/api
+        run: uv sync --all-extras
+      - name: Ruff
+        working-directory: apps/api
+        run: |
+          uv run ruff check src tests
+          uv run ruff format --check src tests
+      - name: Mypy
+        working-directory: apps/api
+        run: uv run mypy src
+
+  api-test:
+    name: API — pytest (testcontainers)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.4"
+          enable-cache: true
+      - run: uv python install 3.12
+      - name: Install deps
+        working-directory: apps/api
+        run: uv sync --all-extras
+      - name: Run tests
+        working-directory: apps/api
+        env:
+          TESTCONTAINERS_RYUK_DISABLED: "true"
+        run: uv run pytest -v --cov=zk2 --cov-report=term-missing
+
+  web-lint:
+    name: Web — lint + typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter web lint
+      - run: pnpm --filter web typecheck
+
+  web-test:
+    name: Web — vitest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter web test --run
+
+  security:
+    name: Security scans
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.4"
+      - run: uv python install 3.12
+      - name: Install api deps
+        working-directory: apps/api
+        run: uv sync --all-extras
+      - name: Bandit
+        working-directory: apps/api
+        run: uv run bandit -r src -ll

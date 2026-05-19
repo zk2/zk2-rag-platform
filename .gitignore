@@ -1,0 +1,80 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+.venv/
+venv/
+ENV/
+
+# uv
+.uv/
+
+# Node
+node_modules/
+.next/
+.turbo/
+out/
+build/
+dist/
+.pnpm-store/
+*.tsbuildinfo
+
+# Env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Data / volumes
+data/
+volumes/
+pgsql_storage/
+uploads/
+
+# OS
+Thumbs.db
+
+# Test artifacts
+playwright-report/
+test-results/
+coverage/
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfvars
+!*.tfvars.example
+
+# Secrets / generated
+*.pem
+*.key
+*.crt
+!**/templates/*.pem  # if any template stubs
+
+# OS-level
+.cache/
+
+# Local-only working docs (private)
+PLAN.md
+CLAUDE.md

@@ -1,0 +1,13 @@
+{% extends "_base.html.j2" %}
+{% set subject = "You're invited to zk2-chatbot" %}
+{% block body %}
+  <h2 style="font-size: 20px; color: #0f172a; margin: 0 0 16px;">Welcome to zk2-chatbot</h2>
+  <p style="color: #334155; line-height: 1.6;">
+    You have been invited to join zk2-chatbot. Click the button below to set up your account.
+    This invite expires in {{ ttl_days }} day(s) and can only be used once.
+  </p>
+  <p style="text-align: center; margin: 32px 0;">
+    <a href="{{ link }}" style="background: #0f172a; color: #fff; padding: 12px 24px; border-radius: 8px; text-decoration: none; display: inline-block; font-weight: 600;">Accept invite</a>
+  </p>
+  <p style="color: #64748b; font-size: 13px; word-break: break-all;">{{ link }}</p>
+{% endblock %}
