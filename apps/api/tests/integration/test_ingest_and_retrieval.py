@@ -89,6 +89,8 @@ async def test_ingest_produces_chunks_embeddings_and_bm25(
 
     assert source.meta is not None
     assert source.meta["chunks"] == len(chunks)
+    assert source.lang == "en"
+    assert source.lang_config == "english"
 
 
 async def test_reingest_replaces_chunks_instead_of_duplicating(
@@ -131,7 +133,7 @@ async def test_dense_search_ranks_the_matching_document_first(
     )
     assert hits, "dense search returned nothing"
     assert hits[0].source_name == "alpha.txt"
-    assert hits[0].distance < 0.5
+    assert hits[0].score > 0.5
 
 
 async def test_dense_search_expands_directories_to_descendants(

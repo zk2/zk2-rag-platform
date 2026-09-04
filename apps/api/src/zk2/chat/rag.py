@@ -19,13 +19,19 @@ from zk2.core.errors import NotFoundError, ValidationError
 from zk2.llm.base import LLMProvider
 from zk2.llm.base import Message as LLMMessage
 from zk2.llm.registry import get_embedding_provider, get_llm_provider
-from zk2.retrieval.dense import RetrievedChunk, dense_search
+from zk2.retrieval.base import RetrievedChunk
+from zk2.retrieval.bm25 import bm25_search
+from zk2.retrieval.dense import dense_search
+from zk2.retrieval.fusion import reciprocal_rank_fusion
 from zk2.sources.chunking import count_tokens
 
 logger = structlog.get_logger()
 
 DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
 CONTEXT_TOKEN_BUDGET = 6000  # rough; leaves room for system prompt + answer
+# Each retriever returns more than the final k so fusion has something to fuse
+CANDIDATE_MULTIPLIER = 4
+MIN_CANDIDATES = 20
 
 
 @dataclass(slots=True)
@@ -87,18 +93,32 @@ async def _retrieve(
     query: str,
     k: int,
 ) -> list[RetrievedChunk]:
+    """Hybrid retrieval: dense and lexical candidates fused by RRF.
+
+    The two run in sequence rather than concurrently: an AsyncSession is a
+    single connection and will not serve two queries at once.
+    """
     if not source_ids:
         return []
+    candidates = max(k * CANDIDATE_MULTIPLIER, MIN_CANDIDATES)
+
     emb = await get_embedding_provider(db, org_id=org_id, model=DEFAULT_EMBEDDING_MODEL)
     query_embedding = await emb.embed_query(query)
-    return await dense_search(
+    dense_hits = await dense_search(
         db,
         org_id=org_id,
         source_ids=source_ids,
         query_embedding=query_embedding,
         embedding_model=emb.model,
-        k=k,
+        k=candidates,
     )
+    lexical_hits = await bm25_search(
+        db, org_id=org_id, source_ids=source_ids, query=query, k=candidates
+    )
+    logger.debug(
+        "rag.retrieved", dense=len(dense_hits), bm25=len(lexical_hits), candidates=candidates
+    )
+    return reciprocal_rank_fusion([dense_hits, lexical_hits], limit=k)
 
 
 def _assemble_context(retrieved: list[RetrievedChunk]) -> tuple[list[str], list[dict[str, Any]]]:
@@ -150,7 +170,8 @@ def _sources_event(retrieved: list[RetrievedChunk]) -> StreamEvent:
                     "source_id": r.source_id,
                     "name": r.source_name,
                     "ordinal": r.ordinal,
-                    "score": round(1.0 - r.distance, 4),
+                    "score": round(r.score, 6),
+                    "matched_by": list(r.matched_by) or [r.retriever],
                 }
                 for r in retrieved
             ]

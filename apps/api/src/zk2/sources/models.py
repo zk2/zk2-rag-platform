@@ -50,6 +50,9 @@ class Source(Base):
     name: Mapped[str] = mapped_column(String(512))
     path: Mapped[str] = mapped_column(Ltree())
     status: Mapped[str] = mapped_column(String(24), server_default="pending")
+    # Detected at ingest: `lang` for display, `lang_config` for tsvector
+    lang: Mapped[str | None] = mapped_column(String(8))
+    lang_config: Mapped[str] = mapped_column(String(32), server_default="simple")
     error: Mapped[str | None] = mapped_column(String(2000))
     # NOTE: `metadata` is reserved by SQLAlchemy on Base — map via Column name
     meta: Mapped[dict[str, Any]] = mapped_column(

@@ -6,20 +6,35 @@ descendants via ltree (sources.path).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from zk2.retrieval.base import RetrievedChunk
 
-@dataclass(slots=True)
-class RetrievedChunk:
-    chunk_id: int
-    source_id: int
-    source_name: str
-    ordinal: int
-    text: str
-    distance: float
+SQL = """
+    WITH allowed AS (
+        SELECT id FROM sources
+        WHERE org_id = :org
+          AND path <@ ANY (
+              SELECT path FROM sources
+              WHERE id = ANY(:source_ids) AND org_id = :org
+          )
+          AND type != 'directory'
+    )
+    SELECT sc.id          AS chunk_id,
+           sc.source_id   AS source_id,
+           s.name         AS source_name,
+           sc.ordinal     AS ordinal,
+           sc.text        AS text,
+           (se.embedding <=> :query_vec) AS distance
+    FROM source_embeddings se
+    JOIN source_chunks sc ON sc.id = se.chunk_id
+    JOIN sources s ON s.id = sc.source_id
+    WHERE sc.source_id IN (SELECT id FROM allowed)
+      AND se.model = :model
+    ORDER BY se.embedding <=> :query_vec
+    LIMIT :k
+"""
 
 
 async def dense_search(
@@ -33,35 +48,9 @@ async def dense_search(
 ) -> list[RetrievedChunk]:
     if not source_ids:
         return []
-    sql = text(
-        """
-        WITH allowed AS (
-            SELECT id FROM sources
-            WHERE org_id = :org
-              AND path <@ ANY (
-                  SELECT path FROM sources
-                  WHERE id = ANY(:source_ids) AND org_id = :org
-              )
-              AND type != 'directory'
-        )
-        SELECT sc.id          AS chunk_id,
-               sc.source_id   AS source_id,
-               s.name         AS source_name,
-               sc.ordinal     AS ordinal,
-               sc.text        AS text,
-               (se.embedding <=> :query_vec) AS distance
-        FROM source_embeddings se
-        JOIN source_chunks sc ON sc.id = se.chunk_id
-        JOIN sources s ON s.id = sc.source_id
-        WHERE sc.source_id IN (SELECT id FROM allowed)
-          AND se.model = :model
-        ORDER BY se.embedding <=> :query_vec
-        LIMIT :k
-        """
-    )
     rows = (
         await db.execute(
-            sql,
+            text(SQL),
             {
                 "org": org_id,
                 "source_ids": source_ids,
@@ -78,7 +67,9 @@ async def dense_search(
             source_name=r.source_name,
             ordinal=r.ordinal,
             text=r.text,
-            distance=float(r.distance),
+            # Cosine distance in [0, 2]; similarity is the useful direction
+            score=1.0 - float(r.distance),
+            retriever="dense",
         )
         for r in rows
     ]

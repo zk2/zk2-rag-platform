@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from zk2.core.storage import get_storage
 from zk2.llm.registry import get_embedding_provider
 from zk2.sources.chunking import chunk_text
+from zk2.sources.language import detect_language, search_config
 from zk2.sources.loaders import load_bytes
 from zk2.sources.models import (
     Source,
@@ -43,6 +44,9 @@ async def ingest_source(db: AsyncSession, *, source_id: int) -> None:
         text_content = await _extract(source)
         if not text_content.strip():
             raise ValueError("Extracted content is empty")
+
+        source.lang = detect_language(text_content)
+        source.lang_config = search_config(source.lang)
 
         await _clear_existing_chunks(db, source_id=source_id)
 
@@ -78,24 +82,26 @@ async def ingest_source(db: AsyncSession, *, source_id: int) -> None:
             for chunk, vec in zip(chunk_rows, vectors, strict=True)
         )
 
-        # Populate BM25 via SQL (uses Postgres' to_tsvector)
+        # BM25 index in the document's own language. The configuration name is
+        # bound and cast, never interpolated - search_config() is the whitelist.
         await db.execute(
             text(
                 """
                 INSERT INTO source_bm25 (chunk_id, tsv)
-                SELECT id, to_tsvector('english', text)
+                SELECT id, to_tsvector(CAST(:cfg AS regconfig), text)
                 FROM source_chunks
                 WHERE source_id = :sid
                 ON CONFLICT (chunk_id) DO UPDATE SET tsv = EXCLUDED.tsv
                 """
             ),
-            {"sid": source_id},
+            {"sid": source_id, "cfg": source.lang_config},
         )
 
         source.status = SourceStatus.READY
         source.updated_at = datetime.now(UTC)
         meta: dict[str, Any] = dict(source.meta or {})
         meta["chunks"] = len(chunk_rows)
+        meta["lang"] = source.lang
         meta["tokens"] = sum(c.tokens for c in chunks)
         source.meta = meta
         logger.info(
