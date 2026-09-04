@@ -3,7 +3,7 @@
 import { use, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { useAuthStore } from "@/lib/auth-store";
 import { wsUrl } from "@/lib/ws";
 

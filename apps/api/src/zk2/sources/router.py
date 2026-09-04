@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from zk2.auth.rbac import OrgContext, require_org
 from zk2.core.arq import get_arq_dep
 from zk2.core.deps import get_db_dep
-from zk2.core.errors import NotFound
+from zk2.core.errors import NotFoundError
 from zk2.sources.models import Source, SourceChunk
 from zk2.sources.schemas import (
     ChunkDto,
@@ -116,11 +116,9 @@ async def get_source_endpoint(
     ctx: Annotated[OrgContext, Depends(require_org("viewer"))],
     db: Annotated[AsyncSession, Depends(get_db_dep)],
 ) -> SourceDto:
-    row = await db.scalar(
-        select(Source).where(Source.id == source_id, Source.org_id == ctx.org_id)
-    )
+    row = await db.scalar(select(Source).where(Source.id == source_id, Source.org_id == ctx.org_id))
     if row is None:
-        raise NotFound("Source not found")
+        raise NotFoundError("Source not found")
     return SourceDto.model_validate(row)
 
 
@@ -135,15 +133,19 @@ async def list_chunks_endpoint(
         select(Source.id).where(Source.id == source_id, Source.org_id == ctx.org_id)
     )
     if own is None:
-        raise NotFound("Source not found")
+        raise NotFoundError("Source not found")
     rows = (
-        await db.execute(
-            select(SourceChunk)
-            .where(SourceChunk.source_id == source_id)
-            .order_by(SourceChunk.ordinal)
-            .limit(limit)
+        (
+            await db.execute(
+                select(SourceChunk)
+                .where(SourceChunk.source_id == source_id)
+                .order_by(SourceChunk.ordinal)
+                .limit(limit)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return [ChunkDto.model_validate(r) for r in rows]
 
 

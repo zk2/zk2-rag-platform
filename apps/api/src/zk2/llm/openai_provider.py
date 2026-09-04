@@ -78,16 +78,13 @@ class OpenAIProvider(LLMProvider):
                     tokens_out=final.usage.completion_tokens,
                 )
 
-    def estimate_cost(
-        self, model: str, *, tokens_in: int, tokens_out: int
-    ) -> Decimal:
+    def estimate_cost(self, model: str, *, tokens_in: int, tokens_out: int) -> Decimal:
         price = _PRICE_PER_1M.get(model)
         if price is None:
             return Decimal("0")
         in_price, out_price = price
         return (
-            (Decimal(tokens_in) * in_price + Decimal(tokens_out) * out_price)
-            / Decimal("1000000")
+            (Decimal(tokens_in) * in_price + Decimal(tokens_out) * out_price) / Decimal("1000000")
         ).quantize(Decimal("0.000001"))
 
 

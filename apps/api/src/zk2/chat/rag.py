@@ -10,14 +10,14 @@ from decimal import Decimal
 from typing import Any
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from zk2.auth.models import User
 from zk2.bots.models import Bot, BotSource, BotVersion, Conversation, Message
-from zk2.core.errors import NotFound, ValidationFailed
-from zk2.llm.base import LLMProvider, Message as LLMMessage
-from zk2.llm.openai_provider import OpenAIEmbeddings  # noqa: F401  (default emb model)
+from zk2.core.errors import NotFoundError, ValidationError
+from zk2.llm.base import LLMProvider
+from zk2.llm.base import Message as LLMMessage
 from zk2.llm.registry import get_embedding_provider, get_llm_provider
 from zk2.retrieval.dense import RetrievedChunk, dense_search
 from zk2.sources.chunking import count_tokens
@@ -34,33 +34,31 @@ class StreamEvent:
     payload: dict[str, Any]
 
 
-async def stream_rag(
-    db: AsyncSession,
-    *,
-    org_id: int,
-    bot_id: int,
-    user: User | None,
-    conversation_id: int | None,
-    user_message: str,
-) -> AsyncIterator[StreamEvent]:
+async def _load_bot(db: AsyncSession, *, org_id: int, bot_id: int) -> tuple[Bot, BotVersion]:
     bot = await db.scalar(select(Bot).where(Bot.id == bot_id, Bot.org_id == org_id))
     if bot is None:
-        raise NotFound("Bot not found")
+        raise NotFoundError("Bot not found")
     if bot.current_version_id is None:
-        raise ValidationFailed("Bot has no active version")
-    version = await db.scalar(
-        select(BotVersion).where(BotVersion.id == bot.current_version_id)
-    )
+        raise ValidationError("Bot has no active version")
+    version = await db.scalar(select(BotVersion).where(BotVersion.id == bot.current_version_id))
     if version is None:
-        raise ValidationFailed("Bot version missing")
+        raise ValidationError("Bot version missing")
+    return bot, version
 
-    source_ids = [
-        s for (s,) in (
-            await db.execute(select(BotSource.source_id).where(BotSource.bot_id == bot.id))
-        ).all()
-    ]
 
-    # ─── Conversation
+async def _bot_source_ids(db: AsyncSession, *, bot_id: int) -> list[int]:
+    rows = await db.execute(select(BotSource.source_id).where(BotSource.bot_id == bot_id))
+    return [source_id for (source_id,) in rows.all()]
+
+
+async def _resolve_conversation(
+    db: AsyncSession,
+    *,
+    bot: Bot,
+    user: User | None,
+    conversation_id: int | None,
+    first_message: str,
+) -> Conversation:
     if conversation_id is not None:
         conv = await db.scalar(
             select(Conversation).where(
@@ -68,61 +66,52 @@ async def stream_rag(
             )
         )
         if conv is None:
-            raise NotFound("Conversation not found")
-    else:
-        conv = Conversation(
-            bot_id=bot.id,
-            user_id=user.id if user else None,
-            title=user_message[:64],
-        )
-        db.add(conv)
-        await db.flush()
+            raise NotFoundError("Conversation not found")
+        return conv
 
-    db.add(Message(conversation_id=conv.id, role="user", content=user_message))
+    conv = Conversation(
+        bot_id=bot.id,
+        user_id=user.id if user else None,
+        title=first_message[:64],
+    )
+    db.add(conv)
     await db.flush()
-    yield StreamEvent("conversation", {"id": conv.id})
+    return conv
 
-    # ─── Retrieval
-    retrieved: list[RetrievedChunk] = []
-    if source_ids:
-        emb = await get_embedding_provider(
-            db, org_id=org_id, model=DEFAULT_EMBEDDING_MODEL
-        )
-        q_vec = await emb.embed_query(user_message)
-        retrieved = await dense_search(
-            db,
-            org_id=org_id,
-            source_ids=source_ids,
-            query_embedding=q_vec,
-            embedding_model=emb.model,
-            k=version.num_k,
-        )
-        yield StreamEvent(
-            "sources",
-            {
-                "items": [
-                    {
-                        "chunk_id": r.chunk_id,
-                        "source_id": r.source_id,
-                        "name": r.source_name,
-                        "ordinal": r.ordinal,
-                        "score": round(1.0 - r.distance, 4),
-                    }
-                    for r in retrieved
-                ]
-            },
-        )
 
-    # ─── Context assembly
+async def _retrieve(
+    db: AsyncSession,
+    *,
+    org_id: int,
+    source_ids: list[int],
+    query: str,
+    k: int,
+) -> list[RetrievedChunk]:
+    if not source_ids:
+        return []
+    emb = await get_embedding_provider(db, org_id=org_id, model=DEFAULT_EMBEDDING_MODEL)
+    query_embedding = await emb.embed_query(query)
+    return await dense_search(
+        db,
+        org_id=org_id,
+        source_ids=source_ids,
+        query_embedding=query_embedding,
+        embedding_model=emb.model,
+        k=k,
+    )
+
+
+def _assemble_context(retrieved: list[RetrievedChunk]) -> tuple[list[str], list[dict[str, Any]]]:
+    """Pack retrieved chunks into the token budget, keeping their attribution."""
     context_parts: list[str] = []
-    used_tokens = 0
     used_chunks: list[dict[str, Any]] = []
+    used_tokens = 0
     for r in retrieved:
         snippet = f"[doc:{r.source_name}#{r.ordinal}]\n{r.text}"
-        t = count_tokens(snippet)
-        if used_tokens + t > CONTEXT_TOKEN_BUDGET:
+        tokens = count_tokens(snippet)
+        if used_tokens + tokens > CONTEXT_TOKEN_BUDGET:
             break
-        used_tokens += t
+        used_tokens += tokens
         context_parts.append(snippet)
         used_chunks.append(
             {
@@ -132,7 +121,12 @@ async def stream_rag(
                 "ordinal": r.ordinal,
             }
         )
+    return context_parts, used_chunks
 
+
+def _build_messages(
+    *, version: BotVersion, context_parts: list[str], user_message: str
+) -> list[LLMMessage]:
     system_prompt = (version.system_prompt or "You are a helpful assistant.").strip()
     if context_parts:
         system_prompt += (
@@ -140,13 +134,95 @@ async def stream_rag(
             "If the context does not contain the answer, say so honestly.\n\n"
             "----- CONTEXT -----\n" + "\n\n".join(context_parts)
         )
-
-    messages = [
+    return [
         LLMMessage(role="system", content=system_prompt),
         LLMMessage(role="user", content=user_message),
     ]
 
-    # ─── LLM stream
+
+def _sources_event(retrieved: list[RetrievedChunk]) -> StreamEvent:
+    return StreamEvent(
+        "sources",
+        {
+            "items": [
+                {
+                    "chunk_id": r.chunk_id,
+                    "source_id": r.source_id,
+                    "name": r.source_name,
+                    "ordinal": r.ordinal,
+                    "score": round(1.0 - r.distance, 4),
+                }
+                for r in retrieved
+            ]
+        },
+    )
+
+
+async def _record_usage(
+    db: AsyncSession,
+    *,
+    org_id: int,
+    bot_id: int,
+    conversation_id: int,
+    version: BotVersion,
+    tokens_in: int,
+    tokens_out: int,
+    cost: Decimal,
+) -> None:
+    """Write a usage_event. No ORM model yet - the billing slice (week 8) adds one."""
+    await db.execute(
+        text(
+            "INSERT INTO usage_events "
+            "(org_id, bot_id, conversation_id, event_type, provider, model, "
+            " tokens_in, tokens_out, cost_usd, metadata) "
+            "VALUES (:org, :bot, :conv, 'llm_call', :prov, :model, "
+            "        :tin, :tout, :cost, CAST(:meta AS jsonb))"
+        ),
+        {
+            "org": org_id,
+            "bot": bot_id,
+            "conv": conversation_id,
+            "prov": version.llm_provider,
+            "model": version.llm_model,
+            "tin": tokens_in,
+            "tout": tokens_out,
+            "cost": cost,
+            "meta": "{}",
+        },
+    )
+
+
+async def stream_rag(
+    db: AsyncSession,
+    *,
+    org_id: int,
+    bot_id: int,
+    user: User | None,
+    conversation_id: int | None,
+    user_message: str,
+) -> AsyncIterator[StreamEvent]:
+    """Run one RAG turn, yielding protocol events as they happen."""
+    bot, version = await _load_bot(db, org_id=org_id, bot_id=bot_id)
+    source_ids = await _bot_source_ids(db, bot_id=bot.id)
+
+    conv = await _resolve_conversation(
+        db, bot=bot, user=user, conversation_id=conversation_id, first_message=user_message
+    )
+    db.add(Message(conversation_id=conv.id, role="user", content=user_message))
+    await db.flush()
+    yield StreamEvent("conversation", {"id": conv.id})
+
+    retrieved = await _retrieve(
+        db, org_id=org_id, source_ids=source_ids, query=user_message, k=version.num_k
+    )
+    if retrieved:
+        yield _sources_event(retrieved)
+
+    context_parts, used_chunks = _assemble_context(retrieved)
+    messages = _build_messages(
+        version=version, context_parts=context_parts, user_message=user_message
+    )
+
     llm: LLMProvider = await get_llm_provider(db, org_id=org_id, provider=version.llm_provider)
     started = time.perf_counter()
     parts: list[str] = []
@@ -166,20 +242,19 @@ async def stream_rag(
                 tokens_in = chunk.tokens_in
             if chunk.tokens_out is not None:
                 tokens_out = chunk.tokens_out
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.exception("rag.llm_failed")
         yield StreamEvent("error", {"message": str(exc)})
         return
 
     latency_ms = int((time.perf_counter() - started) * 1000)
-    full_answer = "".join(parts)
     cost = llm.estimate_cost(version.llm_model, tokens_in=tokens_in, tokens_out=tokens_out)
 
     db.add(
         Message(
             conversation_id=conv.id,
             role="assistant",
-            content=full_answer,
+            content="".join(parts),
             sources=used_chunks or None,
             tokens_in=tokens_in,
             tokens_out=tokens_out,
@@ -188,40 +263,15 @@ async def stream_rag(
         )
     )
     conv.updated_at = datetime.now(UTC)
-
-    # Usage event for billing/analytics
-    from zk2.bots.models import Conversation as _Conv  # noqa: F401
-
-    from zk2.bots.models import Bot as _Bot  # noqa: F401
-
-    from sqlalchemy import insert
-
-    from zk2.bots.models import Message as _Msg  # noqa: F401
-
-    from zk2.bots.models import Bot as _B  # noqa: F401
-
-    # Direct insert into usage_events table (no ORM model defined yet to keep scope small)
-    from sqlalchemy import text as _text
-
-    await db.execute(
-        _text(
-            "INSERT INTO usage_events "
-            "(org_id, bot_id, conversation_id, event_type, provider, model, "
-            " tokens_in, tokens_out, cost_usd, metadata) "
-            "VALUES (:org, :bot, :conv, 'llm_call', :prov, :model, "
-            "        :tin, :tout, :cost, CAST(:meta AS jsonb))"
-        ),
-        {
-            "org": org_id,
-            "bot": bot.id,
-            "conv": conv.id,
-            "prov": version.llm_provider,
-            "model": version.llm_model,
-            "tin": tokens_in,
-            "tout": tokens_out,
-            "cost": cost,
-            "meta": "{}",
-        },
+    await _record_usage(
+        db,
+        org_id=org_id,
+        bot_id=bot.id,
+        conversation_id=conv.id,
+        version=version,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        cost=cost,
     )
 
     yield StreamEvent(

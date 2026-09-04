@@ -13,15 +13,15 @@ from zk2.auth.models import MagicLink, Session, User
 from zk2.config import get_settings
 from zk2.core.audit import write_audit
 from zk2.core.email import send_templated
-from zk2.core.errors import Unauthorized
+from zk2.core.errors import UnauthorizedError
 from zk2.core.rate_limit import hit as rate_limit_hit
 from zk2.core.security import (
     create_access_token,
     generate_opaque_token,
+    hash_password,
     hash_token,
     needs_rehash,
     verify_password,
-    hash_password,
 )
 
 logger = structlog.get_logger()
@@ -62,7 +62,7 @@ async def authenticate_user(
             ip=ip,
             user_agent=user_agent,
         )
-        raise Unauthorized("Invalid credentials")
+        raise UnauthorizedError("Invalid credentials")
 
     if not verify_password(password, user.password_hash):
         await write_audit(
@@ -73,12 +73,12 @@ async def authenticate_user(
             ip=ip,
             user_agent=user_agent,
         )
-        raise Unauthorized("Invalid credentials")
+        raise UnauthorizedError("Invalid credentials")
 
     if needs_rehash(user.password_hash):
         user.password_hash = hash_password(password)
 
-    access_token, refresh_token, expires_in = await _issue_tokens(
+    access_token, refresh_token, expires_in = await issue_tokens(
         db, user=user, ip=ip, user_agent=user_agent
     )
     user.last_login_at = _utcnow()
@@ -92,7 +92,7 @@ async def authenticate_user(
     return user, access_token, refresh_token, expires_in
 
 
-async def _issue_tokens(
+async def issue_tokens(
     db: AsyncSession,
     *,
     user: User,
@@ -126,15 +126,13 @@ async def refresh_tokens(
     token_hash = hash_token(refresh_token)
     now = _utcnow()
 
-    session = await db.scalar(
-        select(Session).where(Session.refresh_token_hash == token_hash)
-    )
+    session = await db.scalar(select(Session).where(Session.refresh_token_hash == token_hash))
     if session is None or session.revoked_at is not None or session.expires_at < now:
-        raise Unauthorized("Invalid or expired refresh token")
+        raise UnauthorizedError("Invalid or expired refresh token")
 
     user = await db.scalar(select(User).where(User.id == session.user_id))
     if user is None or not user.is_active:
-        raise Unauthorized("User inactive")
+        raise UnauthorizedError("User inactive")
 
     # Rotate: revoke old, create new
     session.revoked_at = now
@@ -160,9 +158,7 @@ async def refresh_tokens(
 async def revoke_session_by_token(db: AsyncSession, refresh_token: str) -> None:
     token_hash = hash_token(refresh_token)
     await db.execute(
-        update(Session)
-        .where(Session.refresh_token_hash == token_hash)
-        .values(revoked_at=_utcnow())
+        update(Session).where(Session.refresh_token_hash == token_hash).values(revoked_at=_utcnow())
     )
 
 
@@ -200,7 +196,10 @@ async def send_magic_link(db: AsyncSession, *, email: str) -> None:
     token = await issue_magic_link(db, email=email, purpose="login")
     link = f"{settings.app.base_url}/magic?token={token}"
     await send_templated(
-        email, "magic_link.html.j2", link=link, ttl_minutes=settings.auth.magic_link_ttl_seconds // 60
+        email,
+        "magic_link.html.j2",
+        link=link,
+        ttl_minutes=settings.auth.magic_link_ttl_seconds // 60,
     )
 
 
@@ -220,14 +219,14 @@ async def consume_magic_link(
         )
     )
     if ml is None or ml.used_at is not None or ml.expires_at < now:
-        raise Unauthorized("Invalid or expired magic link")
+        raise UnauthorizedError("Invalid or expired magic link")
 
     user = await db.scalar(select(User).where(User.email == ml.email))
     if user is None or not user.is_active:
-        raise Unauthorized("User not found")
+        raise UnauthorizedError("User not found")
 
     ml.used_at = now
-    access, refresh, expires_in = await _issue_tokens(db, user=user, ip=ip, user_agent=user_agent)
+    access, refresh, expires_in = await issue_tokens(db, user=user, ip=ip, user_agent=user_agent)
     user.last_login_at = now
     await write_audit(
         db,

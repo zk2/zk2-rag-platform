@@ -119,9 +119,17 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S", "PLR", "ARG"]
+# Fixtures import the app only after env vars and containers are ready.
+"tests/**" = ["S", "PLR", "ARG", "PLC0415"]
 "alembic/**" = ["ERA", "RUF"]
 "scripts/**" = ["S"]
+# These modules own process-wide resources (engine, redis pool, arq pool,
+# storage backend) as lazily-initialised singletons. The `global` statement is
+# the pattern, not an accident - see ADR-0009.
+"src/zk2/core/db.py" = ["PLW0603"]
+"src/zk2/core/redis_client.py" = ["PLW0603"]
+"src/zk2/core/arq.py" = ["PLW0603"]
+"src/zk2/core/storage.py" = ["PLW0603"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -133,7 +141,17 @@ plugins = ["pydantic.mypy"]
 exclude = ["alembic/versions/", "tests/"]
 
 [[tool.mypy.overrides]]
-module = ["authlib.*", "pyotp.*", "arq.*"]
+module = [
+    "authlib.*",
+    "pyotp.*",
+    "arq.*",
+    "pgvector.*",
+    "selectolax.*",
+    "usp.*",
+    "pymupdf.*",
+    "docx.*",
+    "openpyxl.*",
+]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

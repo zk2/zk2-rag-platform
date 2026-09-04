@@ -28,9 +28,7 @@ class FetchedPage:
 
 async def fetch_url(url: str, *, timeout: float = DEFAULT_TIMEOUT) -> FetchedPage:
     headers = {"User-Agent": DEFAULT_USER_AGENT}
-    async with httpx.AsyncClient(
-        timeout=timeout, follow_redirects=True, headers=headers
-    ) as client:
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers=headers) as client:
         resp = await client.get(url)
         resp.raise_for_status()
         ct = resp.headers.get("content-type", "").lower().split(";", 1)[0].strip()
@@ -51,17 +49,13 @@ async def fetch_url(url: str, *, timeout: float = DEFAULT_TIMEOUT) -> FetchedPag
     title = title_node.text(strip=True) if title_node else url
 
     body_node = tree.body
-    text = (
-        body_node.text(separator="\n", strip=True)
-        if body_node
-        else tree.text(strip=True)
-    )
+    text = body_node.text(separator="\n", strip=True) if body_node else tree.text(strip=True)
     return FetchedPage(url=url, final_url=final, title=title, text=text, content_type=ct)
 
 
 async def discover_sitemap(base_url: str, *, limit: int = 500) -> list[str]:
     """Return unique URLs found in the site's sitemap.xml (or robots.txt → sitemaps)."""
-    from usp.tree import sitemap_tree_for_homepage  # type: ignore[import-not-found]
+    from usp.tree import sitemap_tree_for_homepage  # noqa: PLC0415  (slow import)
 
     def _scan() -> list[str]:
         tree = sitemap_tree_for_homepage(base_url)

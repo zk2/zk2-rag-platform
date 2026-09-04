@@ -38,8 +38,7 @@ def setup_telemetry(app: FastAPI) -> None:
         RedisInstrumentor().instrument()
 
     if settings.observability.sentry_dsn:
-        import sentry_sdk
-        from sentry_sdk.integrations.asgi import SentryAsgiMiddleware  # noqa: F401
+        import sentry_sdk  # noqa: PLC0415  (optional dep, only when SENTRY_DSN is set)
 
         sentry_sdk.init(
             dsn=settings.observability.sentry_dsn,

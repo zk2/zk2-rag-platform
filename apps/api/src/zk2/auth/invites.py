@@ -14,7 +14,7 @@ from zk2.auth.models import AccessRequest, Invite, Membership, Organization, Use
 from zk2.config import get_settings
 from zk2.core.audit import write_audit
 from zk2.core.email import send_templated
-from zk2.core.errors import Conflict, NotFound, Unauthorized, ValidationFailed
+from zk2.core.errors import ConflictError, NotFoundError, UnauthorizedError, ValidationError
 from zk2.core.rate_limit import hit as rate_limit_hit
 from zk2.core.security import generate_opaque_token, hash_password, hash_token
 
@@ -31,7 +31,7 @@ def _check_email_domain(email: str) -> None:
         return
     domain = email.split("@", 1)[-1].lower()
     if domain not in allowed:
-        raise ValidationFailed(f"Email domain '{domain}' is not allowed")
+        raise ValidationError(f"Email domain '{domain}' is not allowed")
 
 
 # ─── Access requests ────────────────────────────────────────
@@ -77,7 +77,7 @@ async def create_access_request(
                 message=message or "",
                 admin_url=f"{settings.app.base_url}/admin/access-requests",
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.exception("access_request.notify_admin_failed")
 
     await write_audit(
@@ -100,9 +100,9 @@ async def decide_access_request(
 ) -> AccessRequest | Invite:
     req = await db.scalar(select(AccessRequest).where(AccessRequest.id == request_id))
     if req is None:
-        raise NotFound("Access request not found")
+        raise NotFoundError("Access request not found")
     if req.status != "pending":
-        raise Conflict(f"Request already {req.status}")
+        raise ConflictError(f"Request already {req.status}")
 
     req.status = "approved" if approve else "rejected"
     req.decided_by_user_id = decided_by.id
@@ -152,7 +152,7 @@ async def issue_invite(
 
     if org_id is None:
         if not create_org_name:
-            raise ValidationFailed("Either org_id or create_org_name must be provided")
+            raise ValidationError("Either org_id or create_org_name must be provided")
         slug = slugify(create_org_name)[:64] or generate_opaque_token(6)
         # Ensure uniqueness
         existing = await db.scalar(select(Organization).where(Organization.slug == slug))
@@ -204,9 +204,9 @@ async def accept_invite(
 
     invite = await db.scalar(select(Invite).where(Invite.token_hash == token_hash))
     if invite is None or invite.used_at is not None or invite.expires_at < now:
-        raise Unauthorized("Invalid or expired invite")
+        raise UnauthorizedError("Invalid or expired invite")
     if invite.org_id is None:
-        raise ValidationFailed("Invite is not linked to an organization")
+        raise ValidationError("Invite is not linked to an organization")
 
     existing_user = await db.scalar(select(User).where(User.email == invite.email))
     if existing_user is not None:
@@ -217,11 +217,7 @@ async def accept_invite(
             )
         )
         if existing_membership is None:
-            db.add(
-                Membership(
-                    user_id=existing_user.id, org_id=invite.org_id, role=invite.role
-                )
-            )
+            db.add(Membership(user_id=existing_user.id, org_id=invite.org_id, role=invite.role))
         user = existing_user
     else:
         user = User(

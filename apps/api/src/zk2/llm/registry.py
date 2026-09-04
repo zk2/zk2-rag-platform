@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from zk2.config import get_settings
-from zk2.core.errors import ValidationFailed
+from zk2.core.errors import ValidationError
 from zk2.core.security import decrypt
 from zk2.llm.base import EmbeddingProvider, LLMProvider
 from zk2.llm.models import LLMProviderConfig
@@ -36,16 +36,14 @@ async def _get_api_key(db: AsyncSession, org_id: int, provider: str) -> str | No
     return fallback.get_secret_value() if fallback else None
 
 
-async def get_llm_provider(
-    db: AsyncSession, *, org_id: int, provider: str
-) -> LLMProvider:
+async def get_llm_provider(db: AsyncSession, *, org_id: int, provider: str) -> LLMProvider:
     if provider == "openai":
         key = await _get_api_key(db, org_id, "openai")
         if not key:
-            raise ValidationFailed("OpenAI API key not configured for this org")
+            raise ValidationError("OpenAI API key not configured for this org")
         return OpenAIProvider(api_key=key)
     msg = f"LLM provider {provider!r} not yet supported"
-    raise ValidationFailed(msg)
+    raise ValidationError(msg)
 
 
 async def get_embedding_provider(
@@ -58,7 +56,7 @@ async def get_embedding_provider(
     if provider == "openai":
         key = await _get_api_key(db, org_id, "openai")
         if not key:
-            raise ValidationFailed("OpenAI API key not configured for this org")
+            raise ValidationError("OpenAI API key not configured for this org")
         return OpenAIEmbeddings(api_key=key, model=model)
     msg = f"Embedding provider {provider!r} not yet supported"
-    raise ValidationFailed(msg)
+    raise ValidationError(msg)

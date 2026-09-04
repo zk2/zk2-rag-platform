@@ -23,32 +23,32 @@ class AppError(Exception):
             self.code = code
 
 
-class ValidationFailed(AppError):
+class ValidationError(AppError):
     status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
     code = "validation_failed"
 
 
-class NotFound(AppError):
+class NotFoundError(AppError):
     status_code = status.HTTP_404_NOT_FOUND
     code = "not_found"
 
 
-class Conflict(AppError):
+class ConflictError(AppError):
     status_code = status.HTTP_409_CONFLICT
     code = "conflict"
 
 
-class Unauthorized(AppError):
+class UnauthorizedError(AppError):
     status_code = status.HTTP_401_UNAUTHORIZED
     code = "unauthorized"
 
 
-class Forbidden(AppError):
+class ForbiddenError(AppError):
     status_code = status.HTTP_403_FORBIDDEN
     code = "forbidden"
 
 
-class RateLimited(AppError):
+class RateLimitedError(AppError):
     status_code = status.HTTP_429_TOO_MANY_REQUESTS
     code = "rate_limited"
 
@@ -61,7 +61,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def _app_error(_: Request, exc: AppError) -> JSONResponse:
         headers = None
-        if isinstance(exc, RateLimited):
+        if isinstance(exc, RateLimitedError):
             headers = {"Retry-After": str(exc.retry_after)}
         return JSONResponse(
             status_code=exc.status_code,

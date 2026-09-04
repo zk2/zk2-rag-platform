@@ -2,19 +2,24 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from collections.abc import Sequence
+from typing import Any, cast
 
 import structlog
 from arq import ArqRedis
-from sqlalchemy import delete, select, text
+from sqlalchemy import CursorResult, Row, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from zk2.core.errors import Conflict, NotFound, ValidationFailed
+from zk2.core.errors import NotFoundError, ValidationError
 from zk2.core.storage import get_storage
+from zk2.sources.ingest import ingest_source
 from zk2.sources.models import Source, SourceStatus, SourceType
 from zk2.sources.web import discover_sitemap
 
 logger = structlog.get_logger()
+
+# One node of the sources tree as returned to the API layer.
+TreeNode = dict[str, Any]
 
 
 async def _resolve_path(
@@ -23,13 +28,11 @@ async def _resolve_path(
     """Compute the ltree path for a newly inserted node given its parent."""
     if parent_id is None:
         return str(child_id)
-    parent = await db.scalar(
-        select(Source).where(Source.id == parent_id, Source.org_id == org_id)
-    )
+    parent = await db.scalar(select(Source).where(Source.id == parent_id, Source.org_id == org_id))
     if parent is None:
-        raise NotFound("Parent directory not found")
+        raise NotFoundError("Parent directory not found")
     if parent.type != SourceType.DIRECTORY:
-        raise ValidationFailed("Parent must be a directory")
+        raise ValidationError("Parent must be a directory")
     return f"{parent.path}.{child_id}"
 
 
@@ -113,23 +116,19 @@ async def import_sitemap(
 ) -> list[Source]:
     urls = await discover_sitemap(base_url, limit=limit)
     if not urls:
-        raise ValidationFailed("Sitemap discovery returned no URLs")
+        raise ValidationError("Sitemap discovery returned no URLs")
     created: list[Source] = []
     for url in urls:
         created.append(
-            await create_url_source(
-                db, arq, org_id=org_id, parent_id=parent_id, url=url
-            )
+            await create_url_source(db, arq, org_id=org_id, parent_id=parent_id, url=url)
         )
     return created
 
 
 async def delete_source(db: AsyncSession, *, org_id: int, source_id: int) -> int:
-    source = await db.scalar(
-        select(Source).where(Source.id == source_id, Source.org_id == org_id)
-    )
+    source = await db.scalar(select(Source).where(Source.id == source_id, Source.org_id == org_id))
     if source is None:
-        raise NotFound("Source not found")
+        raise NotFoundError("Source not found")
     # Subtree: same path or descendant
     rows = (
         await db.execute(
@@ -145,44 +144,50 @@ async def delete_source(db: AsyncSession, *, org_id: int, source_id: int) -> int
         if r.storage_key:
             try:
                 await storage.delete(r.storage_key)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logger.warning("storage.delete_failed", key=r.storage_key)
-    result = await db.execute(
-        text("DELETE FROM sources WHERE org_id = :org AND path <@ :p"),
-        {"org": org_id, "p": source.path},
+    result = cast(
+        "CursorResult[Any]",
+        await db.execute(
+            text("DELETE FROM sources WHERE org_id = :org AND path <@ :p"),
+            {"org": org_id, "p": source.path},
+        ),
     )
     return result.rowcount or 0
 
 
 async def get_tree(
     db: AsyncSession, *, org_id: int, parent_id: int | None, directories_only: bool
-) -> list[dict]:
+) -> list[TreeNode]:
     base_path = "*"
     if parent_id is not None:
         parent = await db.scalar(
             select(Source).where(Source.id == parent_id, Source.org_id == org_id)
         )
         if parent is None:
-            raise NotFound("Parent not found")
+            raise NotFoundError("Parent not found")
         base_path = f"{parent.path}.*"
 
     # asyncpg parses `:` as parameter prefix, so use CAST(...) instead of `::lquery`.
     # Also use CAST(path AS text) to render the ltree value as a string.
+    # Every fragment of `where_parts` is a literal defined right here, and every
+    # value travels as a bound parameter - nothing user-supplied is formatted in.
     where_parts = ["org_id = :org", "path ~ CAST(:p AS lquery)"]
     params: dict[str, object] = {"org": org_id, "p": base_path}
     if directories_only:
         where_parts.append("type = 'directory'")
+    where_sql = " AND ".join(where_parts)
     sql = (
-        "SELECT id, type, name, status, CAST(path AS text) AS path "
-        f"FROM sources WHERE {' AND '.join(where_parts)} ORDER BY nlevel(path), name"
+        "SELECT id, type, name, status, CAST(path AS text) AS path "  # noqa: S608
+        f"FROM sources WHERE {where_sql} ORDER BY nlevel(path), name"
     )
     rows = (await db.execute(text(sql), params)).all()
     return _build_tree(rows)
 
 
-def _build_tree(rows) -> list[dict]:  # type: ignore[no-untyped-def]
-    by_path: dict[str, dict] = {}
-    roots: list[dict] = []
+def _build_tree(rows: Sequence[Row[Any]]) -> list[TreeNode]:
+    by_path: dict[str, TreeNode] = {}
+    roots: list[TreeNode] = []
     # Sorted by nlevel(path) so parents are seen before children.
     for r in rows:
         node = {
@@ -207,6 +212,4 @@ async def _enqueue_ingest(arq: ArqRedis | None, db: AsyncSession, source_id: int
         await arq.enqueue_job("ingest_source", source_id)
         return
     # Inline fallback
-    from zk2.sources.ingest import ingest_source
-
     await ingest_source(db, source_id=source_id)

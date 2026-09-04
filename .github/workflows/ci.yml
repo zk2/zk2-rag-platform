@@ -82,7 +82,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter web test --run
+      - run: pnpm --filter web test
 
   security:
     name: Security scans

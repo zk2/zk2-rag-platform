@@ -13,10 +13,10 @@ from zk2.bots.service import (
     create_bot,
     delete_bot,
     get_bot,
+    hydrate_bot,
     list_bots,
     patch_bot,
 )
-from zk2.bots.service import _hydrate  # type: ignore[attr-defined]
 from zk2.core.deps import get_db_dep
 
 router = APIRouter(prefix="/bots", tags=["bots"])
@@ -46,7 +46,7 @@ async def get_bot_endpoint(
     db: Annotated[AsyncSession, Depends(get_db_dep)],
 ) -> BotDto:
     bot = await get_bot(db, org_id=ctx.org_id, bot_id=bot_id)
-    return await _hydrate(db, bot)
+    return await hydrate_bot(db, bot)
 
 
 @router.patch("/{bot_id}", response_model=BotDto)
@@ -56,9 +56,7 @@ async def patch_bot_endpoint(
     ctx: Annotated[OrgContext, Depends(require_org("editor"))],
     db: Annotated[AsyncSession, Depends(get_db_dep)],
 ) -> BotDto:
-    return await patch_bot(
-        db, org_id=ctx.org_id, user=ctx.user, bot_id=bot_id, payload=payload
-    )
+    return await patch_bot(db, org_id=ctx.org_id, user=ctx.user, bot_id=bot_id, payload=payload)
 
 
 @router.delete("/{bot_id}")

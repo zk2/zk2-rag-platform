@@ -18,8 +18,8 @@ from zk2.auth.schemas import (
     LoginRequest,
     MagicLinkRequest,
     MagicLinkVerifyRequest,
-    MeResponse,
     MembershipDto,
+    MeResponse,
     RefreshRequest,
     TokenResponse,
     UserDto,
@@ -27,6 +27,7 @@ from zk2.auth.schemas import (
 from zk2.auth.service import (
     authenticate_user,
     consume_magic_link,
+    issue_tokens,
     refresh_tokens,
     revoke_session_by_token,
     send_magic_link,
@@ -72,9 +73,7 @@ async def refresh(
         ip=get_client_ip(request),
         user_agent=get_user_agent(request),
     )
-    return TokenResponse(
-        access_token=access, refresh_token=refresh_token, expires_in=expires_in
-    )
+    return TokenResponse(access_token=access, refresh_token=refresh_token, expires_in=expires_in)
 
 
 @router.post("/logout", response_model=GenericMessage)
@@ -110,9 +109,7 @@ async def magic_verify(
     return TokenResponse(access_token=access, refresh_token=refresh, expires_in=expires_in)
 
 
-@router.post(
-    "/invite/accept", response_model=TokenResponse, status_code=status.HTTP_201_CREATED
-)
+@router.post("/invite/accept", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def invite_accept(
     payload: InviteAcceptRequest,
     request: Request,
@@ -127,9 +124,7 @@ async def invite_accept(
         user_agent=get_user_agent(request),
     )
     # Issue tokens immediately so the user is logged in
-    from zk2.auth.service import _issue_tokens  # local import to keep service private
-
-    access, refresh, expires_in = await _issue_tokens(
+    access, refresh, expires_in = await issue_tokens(
         db, user=user, ip=get_client_ip(request), user_agent=get_user_agent(request)
     )
     return TokenResponse(access_token=access, refresh_token=refresh, expires_in=expires_in)
@@ -146,9 +141,7 @@ async def me(
         .where(Membership.user_id == user.id)
     )
     memberships = [
-        MembershipDto(
-            org_id=org.id, org_slug=org.slug, org_name=org.name, role=m.role
-        )
+        MembershipDto(org_id=org.id, org_slug=org.slug, org_name=org.name, role=m.role)
         for m, org in rows.all()
     ]
     return MeResponse(user=UserDto.model_validate(user), memberships=memberships)
@@ -160,9 +153,7 @@ async def me(
 public_router = APIRouter(prefix="/access-requests", tags=["access"])
 
 
-@public_router.post(
-    "", response_model=GenericMessage, status_code=status.HTTP_201_CREATED
-)
+@public_router.post("", response_model=GenericMessage, status_code=status.HTTP_201_CREATED)
 async def submit_access_request(
     payload: AccessRequestCreate,
     request: Request,

@@ -15,12 +15,10 @@ class StorageBackend(ABC):
         """Persist `content` for the org, return an opaque key."""
 
     @abstractmethod
-    async def read(self, key: str) -> bytes:
-        ...
+    async def read(self, key: str) -> bytes: ...
 
     @abstractmethod
-    async def delete(self, key: str) -> None:
-        ...
+    async def delete(self, key: str) -> None: ...
 
 
 class LocalStorage(StorageBackend):

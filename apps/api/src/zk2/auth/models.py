@@ -32,9 +32,7 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, server_default="true")
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     memberships: Mapped[list[Membership]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
@@ -54,9 +52,7 @@ class OAuthAccount(Base):
     provider: Mapped[str] = mapped_column(String(32))
     provider_user_id: Mapped[str] = mapped_column(String(255))
     email: Mapped[str | None] = mapped_column(String(320))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class TotpSecret(Base):
@@ -67,9 +63,7 @@ class TotpSecret(Base):
     )
     secret_encrypted: Mapped[str] = mapped_column(String(512))
     enabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class RecoveryCode(Base):
@@ -96,9 +90,7 @@ class Session(Base):
     user_agent: Mapped[str | None] = mapped_column(String(512))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class MagicLink(Base):
@@ -110,9 +102,7 @@ class MagicLink(Base):
     purpose: Mapped[str] = mapped_column(String(32))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class AccessRequest(Base):
@@ -128,9 +118,7 @@ class AccessRequest(Base):
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     decision_reason: Mapped[str | None] = mapped_column(String(2000))
     ip: Mapped[str | None] = mapped_column(INET)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Invite(Base):
@@ -151,9 +139,7 @@ class Invite(Base):
     created_by_user_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("users.id", ondelete="SET NULL")
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Organization(Base):
@@ -162,12 +148,8 @@ class Organization(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     slug: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(255))
-    settings: Mapped[dict[str, Any]] = mapped_column(
-        JSONB, server_default="{}", default=dict
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    settings: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}", default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     memberships: Mapped[list[Membership]] = relationship(
         back_populates="organization", cascade="all, delete-orphan"
@@ -182,16 +164,12 @@ class Membership(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    user_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("users.id", ondelete="CASCADE")
-    )
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"))
     org_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("organizations.id", ondelete="CASCADE")
     )
     role: Mapped[str] = mapped_column(String(32))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user: Mapped[User] = relationship(back_populates="memberships")
     organization: Mapped[Organization] = relationship(back_populates="memberships")
@@ -213,11 +191,7 @@ class AuditLog(Base):
         BigInteger, ForeignKey("organizations.id", ondelete="CASCADE")
     )
     target: Mapped[str | None] = mapped_column(String(128))
-    payload: Mapped[dict[str, Any]] = mapped_column(
-        JSONB, server_default="{}", default=dict
-    )
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}", default=dict)
     ip: Mapped[str | None] = mapped_column(INET)
     user_agent: Mapped[str | None] = mapped_column(String(512))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

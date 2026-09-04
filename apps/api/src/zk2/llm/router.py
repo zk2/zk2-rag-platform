@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from zk2.auth.rbac import OrgContext, require_org
 from zk2.core.audit import write_audit
 from zk2.core.deps import get_db_dep
+from zk2.core.errors import ValidationError
 from zk2.core.security import encrypt
 from zk2.llm.models import LLMProviderConfig
 from zk2.llm.schemas import ProviderDto, ProviderUpsert
@@ -37,12 +38,16 @@ async def list_providers(
     db: Annotated[AsyncSession, Depends(get_db_dep)],
 ) -> list[ProviderDto]:
     rows = (
-        await db.execute(
-            select(LLMProviderConfig)
-            .where(LLMProviderConfig.org_id == ctx.org_id)
-            .order_by(LLMProviderConfig.provider)
+        (
+            await db.execute(
+                select(LLMProviderConfig)
+                .where(LLMProviderConfig.org_id == ctx.org_id)
+                .order_by(LLMProviderConfig.provider)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return [_to_dto(r) for r in rows]
 
 
@@ -54,9 +59,7 @@ async def upsert_provider(
     db: Annotated[AsyncSession, Depends(get_db_dep)],
 ) -> ProviderDto:
     if provider not in SUPPORTED_PROVIDERS:
-        from zk2.core.errors import ValidationFailed
-
-        raise ValidationFailed(f"Unknown provider: {provider}")
+        raise ValidationError(f"Unknown provider: {provider}")
 
     row = await db.scalar(
         select(LLMProviderConfig).where(

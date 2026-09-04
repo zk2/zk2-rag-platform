@@ -10,17 +10,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from zk2.auth.models import User
 from zk2.bots.models import Bot, BotSource, BotVersion
 from zk2.bots.schemas import BotCreate, BotDto, BotPatch
-from zk2.core.errors import NotFound
+from zk2.core.errors import NotFoundError
 
 
-async def _hydrate(db: AsyncSession, bot: Bot) -> BotDto:
+async def hydrate_bot(db: AsyncSession, bot: Bot) -> BotDto:
     version: BotVersion | None = None
     if bot.current_version_id is not None:
-        version = await db.scalar(
-            select(BotVersion).where(BotVersion.id == bot.current_version_id)
-        )
+        version = await db.scalar(select(BotVersion).where(BotVersion.id == bot.current_version_id))
     source_ids = [
-        s for (s,) in (
+        s
+        for (s,) in (
             await db.execute(select(BotSource.source_id).where(BotSource.bot_id == bot.id))
         ).all()
     ]
@@ -39,9 +38,7 @@ async def _hydrate(db: AsyncSession, bot: Bot) -> BotDto:
     )
 
 
-async def create_bot(
-    db: AsyncSession, *, org_id: int, user: User, payload: BotCreate
-) -> BotDto:
+async def create_bot(db: AsyncSession, *, org_id: int, user: User, payload: BotCreate) -> BotDto:
     bot = Bot(org_id=org_id, name=payload.name)
     db.add(bot)
     await db.flush()
@@ -60,22 +57,22 @@ async def create_bot(
     if payload.source_ids:
         db.add_all(BotSource(bot_id=bot.id, source_id=s) for s in payload.source_ids)
     await db.flush()
-    return await _hydrate(db, bot)
+    return await hydrate_bot(db, bot)
 
 
 async def list_bots(db: AsyncSession, *, org_id: int) -> list[BotDto]:
     bots = (
-        await db.execute(
-            select(Bot).where(Bot.org_id == org_id).order_by(Bot.created_at.desc())
-        )
-    ).scalars().all()
-    return [await _hydrate(db, b) for b in bots]
+        (await db.execute(select(Bot).where(Bot.org_id == org_id).order_by(Bot.created_at.desc())))
+        .scalars()
+        .all()
+    )
+    return [await hydrate_bot(db, b) for b in bots]
 
 
 async def get_bot(db: AsyncSession, *, org_id: int, bot_id: int) -> Bot:
     bot = await db.scalar(select(Bot).where(Bot.id == bot_id, Bot.org_id == org_id))
     if bot is None:
-        raise NotFound("Bot not found")
+        raise NotFoundError("Bot not found")
     return bot
 
 
@@ -86,28 +83,16 @@ async def patch_bot(
     if payload.name is not None:
         bot.name = payload.name
     # If anything that lives on a version changes, snapshot a new version
-    version_fields = {
-        "system_prompt", "llm_provider", "llm_model", "temperature", "num_k"
-    }
+    version_fields = {"system_prompt", "llm_provider", "llm_model", "temperature", "num_k"}
     diff = payload.model_dump(exclude_unset=True, exclude={"name", "source_ids"})
     if diff and bot.current_version_id is not None:
-        current = await db.scalar(
-            select(BotVersion).where(BotVersion.id == bot.current_version_id)
-        )
+        current = await db.scalar(select(BotVersion).where(BotVersion.id == bot.current_version_id))
         new_version = BotVersion(
             bot_id=bot.id,
-            system_prompt=diff.get(
-                "system_prompt", current.system_prompt if current else None
-            ),
-            llm_provider=diff.get(
-                "llm_provider", current.llm_provider if current else "openai"
-            ),
-            llm_model=diff.get(
-                "llm_model", current.llm_model if current else "gpt-4o-mini"
-            ),
-            temperature=diff.get(
-                "temperature", current.temperature if current else 0.0
-            ),
+            system_prompt=diff.get("system_prompt", current.system_prompt if current else None),
+            llm_provider=diff.get("llm_provider", current.llm_provider if current else "openai"),
+            llm_model=diff.get("llm_model", current.llm_model if current else "gpt-4o-mini"),
+            temperature=diff.get("temperature", current.temperature if current else 0.0),
             num_k=diff.get("num_k", current.num_k if current else 5),
             created_by_user_id=user.id,
         )
@@ -117,13 +102,11 @@ async def patch_bot(
     if payload.source_ids is not None:
         await db.execute(delete(BotSource).where(BotSource.bot_id == bot.id))
         if payload.source_ids:
-            db.add_all(
-                BotSource(bot_id=bot.id, source_id=s) for s in payload.source_ids
-            )
+            db.add_all(BotSource(bot_id=bot.id, source_id=s) for s in payload.source_ids)
     bot.updated_at = datetime.now(UTC)
     await db.flush()
     _ = version_fields  # marker for static analyzers
-    return await _hydrate(db, bot)
+    return await hydrate_bot(db, bot)
 
 
 async def delete_bot(db: AsyncSession, *, org_id: int, bot_id: int) -> None:

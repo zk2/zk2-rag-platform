@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from redis.asyncio import Redis
 
-from zk2.core.errors import RateLimited
+from zk2.core.errors import RateLimitedError
 
 
 async def hit(
@@ -19,10 +19,10 @@ async def hit(
     window_seconds: int,
     error_message: str = "Rate limit exceeded",
 ) -> None:
-    """Raise RateLimited if `key` has been hit more than `limit` times within window."""
+    """Raise RateLimitedError if `key` has been hit more than `limit` times within window."""
     current = await redis.incr(key)
     if current == 1:
         await redis.expire(key, window_seconds)
     if current > limit:
         ttl = await redis.ttl(key)
-        raise RateLimited(error_message, retry_after=max(ttl, 1))
+        raise RateLimitedError(error_message, retry_after=max(ttl, 1))

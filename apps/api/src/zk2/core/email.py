@@ -55,9 +55,7 @@ async def send_email(to: str, *, subject: str, html: str) -> None:
         hostname=settings.mail.smtp_server,
         port=settings.mail.smtp_port,
         username=settings.mail.sender if settings.mail.password else None,
-        password=(
-            settings.mail.password.get_secret_value() if settings.mail.password else None
-        ),
+        password=(settings.mail.password.get_secret_value() if settings.mail.password else None),
         use_tls=settings.mail.smtp_use_ssl,
     )
     log.info("email.sent")

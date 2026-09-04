@@ -13,7 +13,8 @@ def get_redis() -> Redis:
     global _client
     if _client is None:
         settings = get_settings()
-        _client = from_url(
+        # redis-py ships no annotations for from_url
+        _client = from_url(  # type: ignore[no-untyped-call]
             str(settings.redis.url),
             decode_responses=True,
             health_check_interval=30,

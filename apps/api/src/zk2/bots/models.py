@@ -40,12 +40,8 @@ class Bot(Base):
     current_version_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("bot_versions.id", ondelete="SET NULL")
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class BotVersion(Base):
@@ -53,23 +49,17 @@ class BotVersion(Base):
     __table_args__ = (Index("idx_bot_versions_bot", "bot_id"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    bot_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("bots.id", ondelete="CASCADE")
-    )
+    bot_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bots.id", ondelete="CASCADE"))
     system_prompt: Mapped[str | None] = mapped_column(Text)
     llm_provider: Mapped[str] = mapped_column(String(32))
     llm_model: Mapped[str] = mapped_column(String(64))
     temperature: Mapped[float] = mapped_column(Float, server_default="0")
     num_k: Mapped[int] = mapped_column(Integer, server_default="5")
-    settings: Mapped[dict[str, Any]] = mapped_column(
-        JSONB, server_default="{}", default=dict
-    )
+    settings: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}", default=dict)
     created_by_user_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("users.id", ondelete="SET NULL")
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class BotSource(Base):
@@ -92,19 +82,13 @@ class Conversation(Base):
     __table_args__ = (Index("idx_conv_bot", "bot_id"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    bot_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("bots.id", ondelete="CASCADE")
-    )
+    bot_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bots.id", ondelete="CASCADE"))
     user_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("users.id", ondelete="SET NULL")
     )
     title: Mapped[str | None] = mapped_column(String(512))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Message(Base):
@@ -123,6 +107,4 @@ class Message(Base):
     tokens_out: Mapped[int | None] = mapped_column(Integer, server_default="0")
     cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(10, 6))
     latency_ms: Mapped[int | None] = mapped_column(Integer)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

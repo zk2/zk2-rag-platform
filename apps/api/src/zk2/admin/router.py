@@ -66,8 +66,10 @@ async def list_invites(
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> list[InviteDto]:
     rows = (
-        await db.execute(select(Invite).order_by(Invite.created_at.desc()).limit(limit))
-    ).scalars().all()
+        (await db.execute(select(Invite).order_by(Invite.created_at.desc()).limit(limit)))
+        .scalars()
+        .all()
+    )
     return [InviteDto.model_validate(r) for r in rows]
 
 

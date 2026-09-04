@@ -25,8 +25,11 @@ class CompletionChunk:
 class LLMProvider(ABC):
     name: str
 
+    # NOT `async def`: the method returns an async iterator, not a coroutine.
+    # Declaring it async would type it as Coroutine[..., AsyncIterator[...]] and
+    # break every implementation under mypy --strict.
     @abstractmethod
-    async def complete(
+    def complete(
         self,
         messages: Sequence[Message],
         *,
@@ -37,9 +40,7 @@ class LLMProvider(ABC):
     ) -> AsyncIterator[CompletionChunk]: ...
 
     @abstractmethod
-    def estimate_cost(
-        self, model: str, *, tokens_in: int, tokens_out: int
-    ) -> Decimal: ...
+    def estimate_cost(self, model: str, *, tokens_in: int, tokens_out: int) -> Decimal: ...
 
 
 class EmbeddingProvider(ABC):

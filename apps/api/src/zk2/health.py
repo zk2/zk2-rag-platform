@@ -26,7 +26,7 @@ async def health_db(
 ) -> JSONResponse:
     try:
         await db.execute(text("select 1"))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content={"status": "degraded", "error": str(exc)},
@@ -40,7 +40,7 @@ async def health_redis(
 ) -> JSONResponse:
     try:
         pong = await redis.ping()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content={"status": "degraded", "error": str(exc)},

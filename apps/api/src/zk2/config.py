@@ -6,6 +6,7 @@ All env vars are validated via Pydantic.
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -17,10 +18,16 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _DOTENV = _REPO_ROOT / ".env"
 
+# Tests must not inherit the developer's .env: it carries real provider keys,
+# SMTP credentials and an OTLP endpoint. Set ZK2_DISABLE_DOTENV=1 to make the
+# process read environment variables only.
+_DOTENV_DISABLED = os.getenv("ZK2_DISABLE_DOTENV", "").lower() in {"1", "true", "yes"}
+_ENV_FILE = str(_DOTENV) if (_DOTENV.exists() and not _DOTENV_DISABLED) else None
+
 
 class _Base(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=str(_DOTENV) if _DOTENV.exists() else None,
+        env_file=_ENV_FILE,
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
@@ -48,7 +55,7 @@ class DatabaseSettings(_Base):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def dsn(self) -> PostgresDsn:
-        return PostgresDsn(  # type: ignore[call-arg]
+        return PostgresDsn(
             f"postgresql+asyncpg://{self.user}:{self.password.get_secret_value()}"
             f"@{self.host}:{self.port}/{self.name}"
         )

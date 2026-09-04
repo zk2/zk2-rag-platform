@@ -16,13 +16,13 @@ class Ltree(UserDefinedType[str]):
     def get_col_spec(self, **_: object) -> str:
         return "ltree"
 
-    def bind_processor(self, dialect):  # type: ignore[no-untyped-def]
+    def bind_processor(self, _dialect):  # type: ignore[no-untyped-def]
         def process(value):  # type: ignore[no-untyped-def]
             return value
 
         return process
 
-    def result_processor(self, dialect, coltype):  # type: ignore[no-untyped-def]
+    def result_processor(self, _dialect, _coltype):  # type: ignore[no-untyped-def]
         def process(value):  # type: ignore[no-untyped-def]
             return value
 

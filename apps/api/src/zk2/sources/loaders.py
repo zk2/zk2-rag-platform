@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import re
+from collections.abc import Callable
 from typing import Final
 
 import structlog
@@ -53,24 +54,25 @@ def _load_json(data: bytes) -> str:
 
 
 def _load_pdf(data: bytes) -> str:
-    import pymupdf  # type: ignore[import-not-found]
+    import pymupdf  # noqa: PLC0415  (heavy optional dep, loaded on demand)
 
-    doc = pymupdf.open(stream=data, filetype="pdf")
+    # pymupdf ships py.typed but leaves `open`, iteration and `close` unannotated
+    doc = pymupdf.open(stream=data, filetype="pdf")  # type: ignore[no-untyped-call]
     try:
-        return "\n\n".join(page.get_text() for page in doc)
+        return "\n\n".join(page.get_text() for page in doc)  # type: ignore[attr-defined]
     finally:
-        doc.close()
+        doc.close()  # type: ignore[no-untyped-call]
 
 
 def _load_docx(data: bytes) -> str:
-    from docx import Document  # type: ignore[import-not-found]
+    from docx import Document  # noqa: PLC0415  (heavy optional dep, loaded on demand)
 
     doc = Document(io.BytesIO(data))
     return "\n".join(p.text for p in doc.paragraphs)
 
 
 def _load_xlsx(data: bytes) -> str:
-    from openpyxl import load_workbook  # type: ignore[import-not-found]
+    from openpyxl import load_workbook  # noqa: PLC0415  (heavy optional dep)
 
     wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
     parts: list[str] = []
@@ -84,18 +86,17 @@ def _load_xlsx(data: bytes) -> str:
 
 
 def _load_html(data: bytes) -> str:
-    from selectolax.parser import HTMLParser  # type: ignore[import-not-found]
+    from selectolax.parser import HTMLParser  # noqa: PLC0415  (heavy optional dep)
 
     tree = HTMLParser(data.decode("utf-8", errors="replace"))
     for selector in ("script", "style", "noscript", "iframe"):
         for node in tree.css(selector):
             node.decompose()
     body = tree.body
-    text = body.text(separator="\n", strip=True) if body else tree.text(strip=True)
-    return text
+    return body.text(separator="\n", strip=True) if body else tree.text(strip=True)
 
 
-_LOADERS: Final[dict[str, callable]] = {  # type: ignore[type-arg]
+_LOADERS: Final[dict[str, Callable[[bytes], str]]] = {
     "txt": _load_txt,
     "md": _load_md,
     "json": _load_json,

@@ -9,12 +9,12 @@ import structlog
 from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from zk2.core.storage import get_storage
 from zk2.llm.registry import get_embedding_provider
 from zk2.sources.chunking import chunk_text
 from zk2.sources.loaders import load_bytes
 from zk2.sources.models import (
     Source,
-    SourceBM25,
     SourceChunk,
     SourceEmbedding,
     SourceStatus,
@@ -66,9 +66,7 @@ async def ingest_source(db: AsyncSession, *, source_id: int) -> None:
         emb_provider = await get_embedding_provider(db, org_id=source.org_id)
         vectors = await emb_provider.embed_documents([c.text for c in chunks])
         if len(vectors) != len(chunk_rows):
-            raise ValueError(
-                f"Embedding count mismatch: {len(vectors)} vs {len(chunk_rows)}"
-            )
+            raise ValueError(f"Embedding count mismatch: {len(vectors)} vs {len(chunk_rows)}")
 
         db.add_all(
             SourceEmbedding(
@@ -107,7 +105,7 @@ async def ingest_source(db: AsyncSession, *, source_id: int) -> None:
             chunks=len(chunk_rows),
             tokens=meta["tokens"],
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         source.status = SourceStatus.FAILED
         source.error = str(exc)[:1900]
         source.updated_at = datetime.now(UTC)
@@ -116,8 +114,6 @@ async def ingest_source(db: AsyncSession, *, source_id: int) -> None:
 
 async def _extract(source: Source) -> str:
     if source.type == SourceType.FILE:
-        from zk2.core.storage import get_storage
-
         key = (source.meta or {}).get("storage_key")
         if not key:
             raise ValueError("File source missing storage_key in metadata")

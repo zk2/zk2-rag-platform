@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Callable, Coroutine
+from typing import Any, ClassVar
 
 import structlog
 from arq.connections import RedisSettings
@@ -36,7 +37,7 @@ def _redis_settings() -> RedisSettings:
 
 
 class WorkerSettings:
-    functions = [ingest_source]
+    functions: ClassVar[list[Callable[..., Coroutine[Any, Any, None]]]] = [ingest_source]
     on_startup = on_startup
     on_shutdown = on_shutdown
     redis_settings = _redis_settings()

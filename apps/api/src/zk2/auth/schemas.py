@@ -65,7 +65,7 @@ class AccessRequestDecision(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
-    token_type: str = "bearer"
+    token_type: str = "bearer"  # noqa: S105  (OAuth token type, not a secret)
     expires_in: int
 
 

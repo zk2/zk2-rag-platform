@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from zk2.auth.models import User
 from zk2.core.db import get_db
-from zk2.core.errors import Unauthorized
+from zk2.core.errors import UnauthorizedError
 from zk2.core.redis_client import get_redis as _get_redis
 from zk2.core.security import decode_access_token
 
@@ -45,19 +45,19 @@ async def current_user_dep(
     authorization: Annotated[str | None, Header()] = None,
 ) -> User:
     if not authorization or not authorization.lower().startswith("bearer "):
-        raise Unauthorized("Missing bearer token")
+        raise UnauthorizedError("Missing bearer token")
     token = authorization.split(" ", 1)[1].strip()
     try:
         payload = decode_access_token(token)
     except jwt.PyJWTError as exc:
-        raise Unauthorized("Invalid or expired token") from exc
+        raise UnauthorizedError("Invalid or expired token") from exc
 
     try:
         user_id = int(payload["sub"])
     except (KeyError, ValueError) as exc:
-        raise Unauthorized("Invalid token subject") from exc
+        raise UnauthorizedError("Invalid token subject") from exc
 
     user = await db.scalar(select(User).where(User.id == user_id))
     if user is None or not user.is_active:
-        raise Unauthorized("User not found or inactive")
+        raise UnauthorizedError("User not found or inactive")
     return user

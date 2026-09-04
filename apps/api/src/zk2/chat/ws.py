@@ -19,10 +19,13 @@ Auth is via the first message — never put tokens in the URL.
 
 from __future__ import annotations
 
+from typing import Any
+
 import jwt
 import structlog
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from zk2.auth.models import Membership, User
 from zk2.bots.models import Bot
@@ -47,56 +50,100 @@ async def _send(ws: WebSocket, kind: str, **payload: object) -> None:
     await ws.send_json({"type": kind, **payload})
 
 
-async def _run(ws: WebSocket, bot_id: int) -> None:
-    # ─── Authenticate via first message
+async def _reject(ws: WebSocket, message: str) -> None:
+    await _send(ws, "error", message=message)
+    await ws.close(code=status.WS_1008_POLICY_VIOLATION)
+
+
+async def _authenticate(ws: WebSocket) -> tuple[User, int] | None:
+    """Handle the auth handshake. Returns (user, org_id), or None if rejected."""
     first = await ws.receive_json()
     if first.get("type") != "auth":
-        await _send(ws, "error", message="First message must be {type: 'auth'}")
-        await ws.close(code=status.WS_1008_POLICY_VIOLATION)
-        return
+        await _reject(ws, "First message must be {type: 'auth'}")
+        return None
+
     token = first.get("token") or ""
     org_id = first.get("org_id")
     if not token or not isinstance(org_id, int):
-        await _send(ws, "error", message="auth requires 'token' and integer 'org_id'")
-        await ws.close(code=status.WS_1008_POLICY_VIOLATION)
-        return
+        await _reject(ws, "auth requires 'token' and integer 'org_id'")
+        return None
 
     try:
         payload = decode_access_token(token)
         user_id = int(payload["sub"])
     except (jwt.PyJWTError, KeyError, ValueError):
-        await _send(ws, "error", message="Invalid token")
-        await ws.close(code=status.WS_1008_POLICY_VIOLATION)
-        return
+        await _reject(ws, "Invalid token")
+        return None
 
     sm = get_sessionmaker()
     async with sm() as db:
         user = await db.scalar(select(User).where(User.id == user_id))
         if user is None or not user.is_active:
-            await _send(ws, "error", message="User inactive")
-            await ws.close(code=status.WS_1008_POLICY_VIOLATION)
-            return
+            await _reject(ws, "User inactive")
+            return None
+        if not await _has_org_access(db, user=user, org_id=org_id):
+            await _reject(ws, "No access to this organization")
+            return None
+    return user, org_id
 
-        if not user.is_super_admin:
-            membership = await db.scalar(
-                select(Membership).where(
-                    Membership.user_id == user.id, Membership.org_id == org_id
-                )
-            )
-            if membership is None:
-                await _send(ws, "error", message="No access to this organization")
-                await ws.close(code=status.WS_1008_POLICY_VIOLATION)
-                return
 
+async def _has_org_access(db: AsyncSession, *, user: User, org_id: int) -> bool:
+    if user.is_super_admin:
+        return True
+    membership = await db.scalar(
+        select(Membership).where(Membership.user_id == user.id, Membership.org_id == org_id)
+    )
+    return membership is not None
+
+
+async def _bot_exists(*, bot_id: int, org_id: int) -> bool:
+    sm = get_sessionmaker()
+    async with sm() as db:
         bot = await db.scalar(select(Bot).where(Bot.id == bot_id, Bot.org_id == org_id))
-        if bot is None:
-            await _send(ws, "error", message="Bot not found")
-            await ws.close(code=status.WS_1008_POLICY_VIOLATION)
-            return
+        return bot is not None
+
+
+async def _handle_turn(
+    ws: WebSocket, *, user: User, org_id: int, bot_id: int, data: dict[str, Any]
+) -> None:
+    """Run one user message end-to-end in its own session."""
+    content = (data.get("content") or "").strip()
+    if not content:
+        await _send(ws, "error", message="Empty content")
+        return
+
+    sm = get_sessionmaker()
+    # Fresh session per turn so commits land between events
+    async with sm() as db:
+        try:
+            async for ev in stream_rag(
+                db,
+                org_id=org_id,
+                bot_id=bot_id,
+                user=user,
+                conversation_id=data.get("conversation_id"),
+                user_message=content,
+            ):
+                await _emit(ws, ev)
+            await db.commit()
+        except Exception as exc:
+            await db.rollback()
+            logger.exception("ws.chat_failed")
+            await _send(ws, "error", message=str(exc))
+
+
+async def _run(ws: WebSocket, bot_id: int) -> None:
+    authed = await _authenticate(ws)
+    if authed is None:
+        return
+    user, org_id = authed
+
+    if not await _bot_exists(bot_id=bot_id, org_id=org_id):
+        await _reject(ws, "Bot not found")
+        return
 
     await _send(ws, "ready")
 
-    # ─── Message loop
     while True:
         try:
             data = await ws.receive_json()
@@ -105,29 +152,7 @@ async def _run(ws: WebSocket, bot_id: int) -> None:
         if data.get("type") != "user_message":
             await _send(ws, "error", message="Unknown message type")
             continue
-        content = (data.get("content") or "").strip()
-        if not content:
-            await _send(ws, "error", message="Empty content")
-            continue
-        conversation_id = data.get("conversation_id")
-
-        # Use a fresh session per turn so commits land between events
-        async with sm() as db:
-            try:
-                async for ev in stream_rag(
-                    db,
-                    org_id=org_id,
-                    bot_id=bot_id,
-                    user=user,
-                    conversation_id=conversation_id,
-                    user_message=content,
-                ):
-                    await _emit(ws, ev)
-                await db.commit()
-            except Exception as exc:  # noqa: BLE001
-                await db.rollback()
-                logger.exception("ws.chat_failed")
-                await _send(ws, "error", message=str(exc))
+        await _handle_turn(ws, user=user, org_id=org_id, bot_id=bot_id, data=data)
 
 
 async def _emit(ws: WebSocket, ev: StreamEvent) -> None:

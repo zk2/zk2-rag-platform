@@ -55,12 +55,8 @@ class Source(Base):
     meta: Mapped[dict[str, Any]] = mapped_column(
         "metadata", JSONB, server_default="{}", default=dict
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class SourceChunk(Base):
@@ -71,18 +67,14 @@ class SourceChunk(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    source_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("sources.id", ondelete="CASCADE")
-    )
+    source_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("sources.id", ondelete="CASCADE"))
     ordinal: Mapped[int] = mapped_column(Integer)
     text: Mapped[str] = mapped_column(Text)
     tokens: Mapped[int] = mapped_column(Integer, server_default="0")
     meta: Mapped[dict[str, Any]] = mapped_column(
         "metadata", JSONB, server_default="{}", default=dict
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class SourceEmbedding(Base):

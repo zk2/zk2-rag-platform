@@ -28,7 +28,7 @@ async def test_health(client: AsyncClient) -> None:
 
 async def test_login_with_bad_credentials(client: AsyncClient) -> None:
     r = await client.post(
-        "/auth/login", json={"email": "nobody@test.local", "password": "Wrong-Pass123"}
+        "/auth/login", json={"email": "nobody@example.com", "password": "Wrong-Pass123"}
     )
     assert r.status_code == 401
 
@@ -64,7 +64,7 @@ async def test_access_request_flow(
     # 1. Public: submit access request
     r = await client.post(
         "/access-requests",
-        json={"email": "newcomer@test.local", "message": "let me in"},
+        json={"email": "newcomer@example.com", "message": "let me in"},
     )
     assert r.status_code == 201
 
@@ -86,27 +86,29 @@ async def test_access_request_flow(
     assert r.status_code == 200, r.text
 
     # 4. Verify invite was created
-    invites = (await db.execute(select(Invite).where(Invite.email == "newcomer@test.local"))).scalars().all()
+    invites = (
+        (await db.execute(select(Invite).where(Invite.email == "newcomer@example.com")))
+        .scalars()
+        .all()
+    )
     assert len(invites) == 1
 
 
 async def test_rate_limit_access_request_by_email(client: AsyncClient) -> None:
     # First should pass
     r = await client.post(
-        "/access-requests", json={"email": "spammer@test.local", "message": "first"}
+        "/access-requests", json={"email": "spammer@example.com", "message": "first"}
     )
     assert r.status_code == 201
     # Second from same email should be rate-limited (default: 1/h)
     r = await client.post(
-        "/access-requests", json={"email": "spammer@test.local", "message": "second"}
+        "/access-requests", json={"email": "spammer@example.com", "message": "second"}
     )
     assert r.status_code == 429
     assert "Retry-After" in r.headers
 
 
-async def test_admin_endpoints_require_super_admin(
-    client: AsyncClient, db: AsyncSession
-) -> None:
+async def test_admin_endpoints_require_super_admin(client: AsyncClient, db: AsyncSession) -> None:
     """Non-super-admin user must NOT access /admin/*."""
     from datetime import UTC, datetime
 
@@ -114,7 +116,7 @@ async def test_admin_endpoints_require_super_admin(
     from zk2.core.security import hash_password
 
     user = User(
-        email="regular@test.local",
+        email="regular@example.com",
         password_hash=hash_password("RegularPass123!"),
         is_super_admin=False,
         is_active=True,
@@ -123,10 +125,8 @@ async def test_admin_endpoints_require_super_admin(
     db.add(user)
     await db.commit()
 
-    token = await _bearer(client, "regular@test.local", "RegularPass123!")
-    r = await client.get(
-        "/admin/access-requests", headers={"Authorization": f"Bearer {token}"}
-    )
+    token = await _bearer(client, "regular@example.com", "RegularPass123!")
+    r = await client.get("/admin/access-requests", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 403
 
 
