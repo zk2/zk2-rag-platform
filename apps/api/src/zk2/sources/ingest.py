@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from zk2.core.storage import get_storage
 from zk2.llm.registry import get_embedding_provider
-from zk2.sources.chunking import chunk_text
+from zk2.sources.chunking import chunk_document
 from zk2.sources.language import detect_language, search_config
 from zk2.sources.loaders import load_bytes
 from zk2.sources.models import (
@@ -50,7 +50,8 @@ async def ingest_source(db: AsyncSession, *, source_id: int) -> None:
 
         await _clear_existing_chunks(db, source_id=source_id)
 
-        chunks = chunk_text(text_content)
+        # The document name becomes the first breadcrumb on every chunk
+        chunks = chunk_document(text_content, title=source.name)
         if not chunks:
             raise ValueError("Chunking produced no chunks")
 
@@ -60,7 +61,10 @@ async def ingest_source(db: AsyncSession, *, source_id: int) -> None:
                 ordinal=c.ordinal,
                 text=c.text,
                 tokens=c.tokens,
-                meta={"original_name": source.name},
+                meta={
+                    "original_name": source.name,
+                    "heading_path": list(c.heading_path),
+                },
             )
             for c in chunks
         ]
