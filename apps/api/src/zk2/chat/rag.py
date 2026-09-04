@@ -209,7 +209,7 @@ async def stream_rag(
             "(org_id, bot_id, conversation_id, event_type, provider, model, "
             " tokens_in, tokens_out, cost_usd, metadata) "
             "VALUES (:org, :bot, :conv, 'llm_call', :prov, :model, "
-            "        :tin, :tout, :cost, :meta::jsonb)"
+            "        :tin, :tout, :cost, CAST(:meta AS jsonb))"
         ),
         {
             "org": org_id,

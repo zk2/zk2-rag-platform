@@ -166,23 +166,14 @@ async def get_tree(
             raise NotFound("Parent not found")
         base_path = f"{parent.path}.*"
 
-    where_parts = ["org_id = :org", "path ~ :p::lquery"]
+    # asyncpg parses `:` as parameter prefix, so use CAST(...) instead of `::lquery`.
+    # Also use CAST(path AS text) to render the ltree value as a string.
+    where_parts = ["org_id = :org", "path ~ CAST(:p AS lquery)"]
     params: dict[str, object] = {"org": org_id, "p": base_path}
     if directories_only:
         where_parts.append("type = 'directory'")
     sql = (
-        "SELECT id, parent_id_from_path(path) AS parent_id, type, name, status, "
-        "       path::text AS path "
-        "FROM (SELECT *, "
-        "       CASE WHEN nlevel(path) <= 1 THEN NULL "
-        "            ELSE split_part(subpath(path, nlevel(path)-2, 1)::text, '.', 1)::bigint "
-        "       END AS parent_id_from_path "
-        "      FROM sources) s "
-        f"WHERE {' AND '.join(where_parts)} ORDER BY nlevel(path), name"
-    )
-    # The subquery above is hard to read; instead use a simpler approach:
-    sql = (
-        "SELECT id, type, name, status, path::text AS path "
+        "SELECT id, type, name, status, CAST(path AS text) AS path "
         f"FROM sources WHERE {' AND '.join(where_parts)} ORDER BY nlevel(path), name"
     )
     rows = (await db.execute(text(sql), params)).all()

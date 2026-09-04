@@ -15,6 +15,8 @@ from alembic import op
 from pgvector.sqlalchemy import Vector
 from sqlalchemy.dialects import postgresql
 
+from zk2.core.types import Ltree
+
 revision: str = "0002_data_layer"
 down_revision: str | Sequence[str] | None = "0001_init_auth"
 branch_labels: str | Sequence[str] | None = None
@@ -67,7 +69,7 @@ def upgrade() -> None:
         ),
         sa.Column("type", sa.String(24), nullable=False),  # directory | file | web
         sa.Column("name", sa.String(512), nullable=False),
-        sa.Column("path", postgresql.LTREE, nullable=False),  # type: ignore[attr-defined]
+        sa.Column("path", Ltree(), nullable=False),
         sa.Column(
             "status",
             sa.String(24),
@@ -133,18 +135,16 @@ def upgrade() -> None:
     )
     op.create_index("idx_emb_chunk", "source_embeddings", ["chunk_id"])
     # Partial HNSW indexes for common dimensions
+    # NOTE: pgvector's HNSW is capped at 2000 dimensions. For 3072-dim
+    # vectors (e.g. text-embedding-3-large at full size) either:
+    #   - request fewer dims via the API's `dimensions` parameter, or
+    #   - switch to `halfvec` (pgvector 0.7+) and HNSW on halfvec_cosine_ops.
+    # We cover the two common HNSW-safe widths here.
     op.execute(
         """
         CREATE INDEX idx_emb_1536_cos ON source_embeddings
         USING hnsw ((embedding::vector(1536)) vector_cosine_ops)
         WHERE vector_dims(embedding) = 1536
-        """
-    )
-    op.execute(
-        """
-        CREATE INDEX idx_emb_3072_cos ON source_embeddings
-        USING hnsw ((embedding::vector(3072)) vector_cosine_ops)
-        WHERE vector_dims(embedding) = 3072
         """
     )
     op.execute(
@@ -355,7 +355,6 @@ def downgrade() -> None:
     op.drop_table("bots")
     op.drop_table("source_bm25")
     op.execute("DROP INDEX IF EXISTS idx_emb_1536_cos")
-    op.execute("DROP INDEX IF EXISTS idx_emb_3072_cos")
     op.execute("DROP INDEX IF EXISTS idx_emb_768_cos")
     op.drop_table("source_embeddings")
     op.drop_table("source_chunks")

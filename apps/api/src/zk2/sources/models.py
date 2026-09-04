@@ -18,10 +18,11 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, LTREE, TSVECTOR
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
 
 from zk2.core.db import Base
+from zk2.core.types import Ltree
 
 
 class SourceType(StrEnum):
@@ -47,7 +48,7 @@ class Source(Base):
     )
     type: Mapped[str] = mapped_column(String(24))
     name: Mapped[str] = mapped_column(String(512))
-    path: Mapped[str] = mapped_column(LTREE)
+    path: Mapped[str] = mapped_column(Ltree())
     status: Mapped[str] = mapped_column(String(24), server_default="pending")
     error: Mapped[str | None] = mapped_column(String(2000))
     # NOTE: `metadata` is reserved by SQLAlchemy on Base — map via Column name

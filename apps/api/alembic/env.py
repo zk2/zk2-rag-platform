@@ -11,10 +11,7 @@ from zk2.config import get_settings
 from zk2.core.db import Base
 
 # Import models so they're registered on Base.metadata
-import zk2.auth.models  # noqa: F401
-import zk2.bots.models  # noqa: F401
-import zk2.llm.models  # noqa: F401
-import zk2.sources.models  # noqa: F401
+import zk2.models_registry  # noqa: F401
 
 config = context.config
 

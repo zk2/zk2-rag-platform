@@ -42,15 +42,20 @@ export default function SourcesPage() {
   );
 }
 
+function hasPending(nodes: Node[] | undefined): boolean {
+  if (!nodes) return false;
+  for (const n of nodes) {
+    if (n.status === "pending" || n.status === "indexing") return true;
+    if (hasPending(n.children)) return true;
+  }
+  return false;
+}
+
 function useTree() {
   return useQuery({
     queryKey: ["sources", "tree"],
     queryFn: () => api.get<Node[]>("/sources/tree"),
-    refetchInterval: (q) => {
-      const has = JSON.stringify(q.state.data).includes("pending") ||
-        JSON.stringify(q.state.data).includes("indexing");
-      return has ? 2000 : false;
-    },
+    refetchInterval: (q) => (hasPending(q.state.data) ? 2000 : false),
   });
 }
 

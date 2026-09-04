@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from zk2.auth.models import Membership, User
-from zk2.core.deps import current_user_dep
+from zk2.core.deps import current_user_dep, get_db_dep
 from zk2.core.errors import Forbidden, NotFound
 
 
@@ -39,7 +39,6 @@ def require_super_admin() -> Callable[[User], User]:
 
 def require_org(min_role: str = "viewer") -> Callable[..., OrgContext]:
     """Resolve current org via `X-Org-Id` header and verify membership/role."""
-    from zk2.core.deps import get_db_dep  # local import to avoid cycle
 
     async def _dep(
         user: Annotated[User, Depends(current_user_dep)],

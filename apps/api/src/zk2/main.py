@@ -9,6 +9,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from zk2 import __version__
+
+# IMPORTANT: import models BEFORE any router so all tables are registered
+# on Base.metadata and ForeignKey strings can resolve.
+import zk2.models_registry  # noqa: F401
+
 from zk2.admin.router import router as admin_router
 from zk2.auth.router import public_router as access_router
 from zk2.auth.router import router as auth_router
