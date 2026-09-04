@@ -53,12 +53,15 @@ def create_app() -> FastAPI:
         root_path="/api" if settings.is_prod else "",
     )
 
-    # CORS — strict allowlist; do NOT use "*" with allow_credentials in prod
-    allowed_origins = [settings.app.base_url] if settings.is_prod else ["*"]
+    # CORS - explicit allowlist in every environment. "*" together with
+    # credentials is exactly the combination this project set out not to repeat.
+    allowed_origins = [settings.app.base_url]
+    if not settings.is_prod:
+        allowed_origins += ["http://localhost:3000", "http://127.0.0.1:3000"]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=allowed_origins,
-        allow_credentials=not settings.is_prod,  # credentials only on permissive dev
+        allow_origins=sorted(set(allowed_origins)),
+        allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )

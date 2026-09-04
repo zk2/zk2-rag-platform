@@ -128,6 +128,25 @@ class ObservabilitySettings(_Base):
     sentry_dsn: str | None = Field(None, alias="SENTRY_DSN")
 
 
+class IngestSettings(_Base):
+    """Limits for user-supplied files and URLs."""
+
+    max_upload_bytes: int = Field(26_214_400, alias="MAX_UPLOAD_BYTES")  # 25 MiB
+    max_fetch_bytes: int = Field(10_485_760, alias="MAX_FETCH_BYTES")  # 10 MiB
+    fetch_timeout_seconds: float = Field(15.0, alias="FETCH_TIMEOUT_SECONDS")
+    max_redirects: int = Field(5, alias="MAX_REDIRECTS")
+    sitemap_default_limit: int = Field(100, alias="SITEMAP_DEFAULT_LIMIT")
+    sitemap_max_limit: int = Field(500, alias="SITEMAP_MAX_LIMIT")
+    # Only for local testing against a private address. Never enable in prod.
+    allow_private_networks: bool = Field(False, alias="SSRF_ALLOW_PRIVATE_NETWORKS")
+    embedding_batch_size: int = Field(100, alias="EMBEDDING_BATCH_SIZE")
+
+
+class ChatSettings(_Base):
+    max_ws_message_bytes: int = Field(32_768, alias="MAX_WS_MESSAGE_BYTES")
+    ws_idle_timeout_seconds: float = Field(900.0, alias="WS_IDLE_TIMEOUT_SECONDS")
+
+
 class StorageSettings(_Base):
     kind: Literal["local", "s3"] = Field("local", alias="STORAGE_KIND")
     local_upload_dir: str = Field("./uploads", alias="LOCAL_UPLOAD_DIR")
@@ -155,6 +174,8 @@ class Settings:
         self.mail = MailSettings()
         self.llm = LLMSettings()
         self.observability = ObservabilitySettings()
+        self.ingest = IngestSettings()
+        self.chat = ChatSettings()
         self.storage = StorageSettings()
         self.super_admin = SuperAdminSeedSettings()
 

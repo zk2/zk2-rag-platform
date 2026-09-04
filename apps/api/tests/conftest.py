@@ -16,6 +16,7 @@ os.environ.pop("SENTRY_DSN", None)
 
 import secrets
 import subprocess
+import tempfile
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,7 @@ from testcontainers.postgres import PostgresContainer
 from testcontainers.redis import RedisContainer
 
 API_DIR = Path(__file__).parent.parent
+_UPLOAD_DIR = Path(tempfile.mkdtemp(prefix="zk2-test-uploads-"))
 
 
 @pytest.fixture(scope="session")
@@ -66,6 +68,7 @@ def _env(_postgres: PostgresContainer, _redis: RedisContainer) -> Iterator[None]
     os.environ["APP_BASE_URL"] = "http://test"
     os.environ["SUPER_ADMIN_EMAIL"] = "admin@example.com"
     os.environ["SUPER_ADMIN_PASSWORD"] = "AdminPass1234!"
+    os.environ["LOCAL_UPLOAD_DIR"] = str(_UPLOAD_DIR)
     # No telemetry, no outbound calls from tests
     os.environ.pop("OTEL_EXPORTER_OTLP_ENDPOINT", None)
     os.environ.pop("SENTRY_DSN", None)
@@ -138,9 +141,15 @@ async def _reset_process_singletons() -> AsyncIterator[None]:
     fails with "attached to a different loop".
     """
     yield
+    from zk2.core import redis_client
     from zk2.core.arq import close_arq
     from zk2.core.db import dispose_engine
     from zk2.core.redis_client import close_redis
+
+    # Rate-limit buckets live in Redis and would otherwise leak across tests:
+    # a dozen logins as the same user from the same IP trip the login limiter.
+    if redis_client._client is not None:
+        await redis_client._client.flushdb()
 
     await dispose_engine()
     await close_redis()
@@ -167,3 +176,46 @@ async def super_admin(db: AsyncSession) -> dict[str, Any]:
     await db.commit()
     await db.refresh(user)
     return {"id": user.id, "email": user.email, "password": pwd}
+
+
+@pytest_asyncio.fixture
+async def org_owner(db: AsyncSession) -> dict[str, Any]:
+    """A user with one organization and an owner membership."""
+    from datetime import UTC, datetime
+
+    from zk2.auth.models import Membership, Organization, User
+    from zk2.core.security import hash_password
+
+    pwd = "OwnerPass1234!"
+    user = User(
+        email="owner@example.com",
+        password_hash=hash_password(pwd),
+        is_active=True,
+        email_verified_at=datetime.now(UTC),
+    )
+    db.add(user)
+    await db.flush()
+
+    org = Organization(slug="acme", name="Acme Inc")
+    db.add(org)
+    await db.flush()
+
+    db.add(Membership(user_id=user.id, org_id=org.id, role="owner"))
+    await db.commit()
+    return {"user_id": user.id, "email": user.email, "password": pwd, "org_id": org.id}
+
+
+@pytest_asyncio.fixture
+async def owner_client(client: AsyncClient, org_owner: dict[str, Any]) -> AsyncClient:
+    """Client already carrying the owner's bearer token and org header."""
+    resp = await client.post(
+        "/auth/login", json={"email": org_owner["email"], "password": org_owner["password"]}
+    )
+    assert resp.status_code == 200, resp.text
+    client.headers.update(
+        {
+            "Authorization": f"Bearer {resp.json()['access_token']}",
+            "X-Org-Id": str(org_owner["org_id"]),
+        }
+    )
+    return client

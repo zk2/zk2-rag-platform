@@ -10,14 +10,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from zk2.auth.rbac import OrgContext, require_org
+from zk2.config import get_settings
 from zk2.core.arq import get_arq_dep
 from zk2.core.deps import get_db_dep
-from zk2.core.errors import NotFoundError
+from zk2.core.errors import NotFoundError, PayloadTooLargeError, ValidationError
+from zk2.sources.loaders import SUPPORTED_EXTENSIONS, detect_extension
 from zk2.sources.models import Source, SourceChunk
 from zk2.sources.schemas import (
     ChunkDto,
     DirectoryCreate,
     SitemapImport,
+    SitemapPreview,
+    SitemapPreviewDto,
     SourceDto,
     SourceNodeDto,
     UrlCreate,
@@ -30,6 +34,7 @@ from zk2.sources.service import (
     get_tree,
     import_sitemap,
 )
+from zk2.sources.web import discover_sitemap
 
 router = APIRouter(prefix="/sources", tags=["sources"])
 
@@ -46,6 +51,38 @@ async def create_directory_endpoint(
     return SourceDto.model_validate(row)
 
 
+UPLOAD_CHUNK_BYTES = 1024 * 1024
+
+
+async def _read_upload(file: UploadFile) -> bytes:
+    """Read an upload, refusing anything over MAX_UPLOAD_BYTES.
+
+    Reads in chunks so an oversized file is rejected while it streams in, rather
+    than after the whole thing already sits in memory. Accepted content is still
+    buffered up to the cap; streaming straight into storage lands with S3
+    multipart in the infra slice.
+    """
+    settings = get_settings().ingest
+    filename = file.filename or "unnamed"
+    extension = detect_extension(filename)
+    if extension not in SUPPORTED_EXTENSIONS:
+        raise ValidationError(
+            f"Unsupported file type: .{extension or '(none)'}. "
+            f"Supported: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
+        )
+
+    chunks: list[bytes] = []
+    total = 0
+    while chunk := await file.read(UPLOAD_CHUNK_BYTES):
+        total += len(chunk)
+        if total > settings.max_upload_bytes:
+            raise PayloadTooLargeError(f"File exceeds {settings.max_upload_bytes} bytes")
+        chunks.append(chunk)
+    if total == 0:
+        raise ValidationError("Uploaded file is empty")
+    return b"".join(chunks)
+
+
 @router.post("/file", response_model=SourceDto, status_code=status.HTTP_201_CREATED)
 async def upload_file_endpoint(
     ctx: Annotated[OrgContext, Depends(require_org("editor"))],
@@ -54,7 +91,7 @@ async def upload_file_endpoint(
     file: Annotated[UploadFile, File()],
     parent_id: Annotated[int | None, Query()] = None,
 ) -> SourceDto:
-    content = await file.read()
+    content = await _read_upload(file)
     row = await create_file_source(
         db,
         arq,
@@ -95,6 +132,22 @@ async def import_sitemap_endpoint(
         limit=payload.limit,
     )
     return [SourceDto.model_validate(r) for r in rows]
+
+
+@router.post("/sitemap/preview", response_model=SitemapPreviewDto)
+async def preview_sitemap_endpoint(
+    payload: SitemapPreview,
+    _ctx: Annotated[OrgContext, Depends(require_org("editor"))],
+) -> SitemapPreviewDto:
+    """Show what a sitemap import would pull in, before spending a single token."""
+    settings = get_settings().ingest
+    urls = await discover_sitemap(str(payload.base_url), limit=settings.sitemap_max_limit)
+    return SitemapPreviewDto(
+        base_url=str(payload.base_url),
+        total_found=len(urls),
+        would_import=min(len(urls), payload.limit),
+        urls=urls[:20],
+    )
 
 
 @router.get("/tree", response_model=list[SourceNodeDto])

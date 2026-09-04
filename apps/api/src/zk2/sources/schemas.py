@@ -25,7 +25,21 @@ class UrlCreate(BaseModel):
 class SitemapImport(BaseModel):
     base_url: HttpUrl
     parent_id: int | None = None
-    limit: int = Field(50, ge=1, le=500)
+    # Each imported URL costs a fetch plus an embedding call, so the default is
+    # deliberately small; /sources/sitemap/preview shows the real number first.
+    limit: int = Field(100, ge=1, le=500)
+
+
+class SitemapPreview(BaseModel):
+    base_url: HttpUrl
+    limit: int = Field(100, ge=1, le=500)
+
+
+class SitemapPreviewDto(BaseModel):
+    base_url: str
+    total_found: int
+    would_import: int
+    urls: list[str]
 
 
 class SourceDto(_Dto):

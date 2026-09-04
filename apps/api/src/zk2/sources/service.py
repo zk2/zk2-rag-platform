@@ -11,6 +11,7 @@ from sqlalchemy import CursorResult, Row, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from zk2.core.errors import NotFoundError, ValidationError
+from zk2.core.net import assert_url_allowed
 from zk2.core.storage import get_storage
 from zk2.sources.ingest import ingest_source
 from zk2.sources.models import Source, SourceStatus, SourceType
@@ -89,6 +90,9 @@ async def create_url_source(
     parent_id: int | None,
     url: str,
 ) -> Source:
+    # Validate before the row exists: the user gets the error now, not as a
+    # failed ingest job minutes later.
+    await assert_url_allowed(url)
     row = Source(
         org_id=org_id,
         type=SourceType.WEB.value,
@@ -166,7 +170,8 @@ async def get_tree(
         )
         if parent is None:
             raise NotFoundError("Parent not found")
-        base_path = f"{parent.path}.*"
+        # `12.*` matches the parent itself too; `12.*{1,}` is strict descendants
+        base_path = f"{parent.path}.*{{1,}}"
 
     # asyncpg parses `:` as parameter prefix, so use CAST(...) instead of `::lquery`.
     # Also use CAST(path AS text) to render the ltree value as a string.
