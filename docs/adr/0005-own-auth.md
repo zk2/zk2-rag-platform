@@ -24,7 +24,7 @@ codes, and an audit log entry for every security-relevant action.
   over a long-lived WebSocket
 - No per-MAU bill and no vendor lock-in
 - The area needs above-average test coverage; auth is the one module that had
-  integration tests from week 1
+  integration tests from the very first commit
 
 ## Alternatives considered
 

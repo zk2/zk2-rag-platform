@@ -12,7 +12,7 @@ agent tool), so it is treated as hostile:
 
 Residual risk: DNS rebinding between our resolution and httpx's own. Closing it
 means pinning the connection to the validated address; the plan tracks that for
-the hardening slice (week 9), where an egress proxy is the better answer anyway.
+production hardening, where an egress proxy is the better answer anyway.
 """
 
 from __future__ import annotations

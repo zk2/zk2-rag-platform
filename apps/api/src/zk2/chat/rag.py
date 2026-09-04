@@ -169,7 +169,7 @@ async def _record_usage(
     tokens_out: int,
     cost: Decimal,
 ) -> None:
-    """Write a usage_event. No ORM model yet - the billing slice (week 8) adds one."""
+    """Write a usage_event. No ORM model yet - the billing work adds one."""
     await db.execute(
         text(
             "INSERT INTO usage_events "

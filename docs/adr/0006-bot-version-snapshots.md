@@ -21,8 +21,8 @@ change; diff is computed between two snapshots.
 - History accumulates for free, and every conversation can name the exact
   configuration that produced it
 - Rollback cannot half-apply, because a version is never partially built
-- A/B variants (week 7) and pipeline versions (week 5) reuse the same shape: an
-  experiment points at version ids
+- A/B variants and pipeline versions reuse the same shape: an experiment points
+  at version ids
 - Rows grow with edit frequency; snapshots are small, and pruning can wait
 
 ## Alternatives considered
