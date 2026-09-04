@@ -69,14 +69,17 @@ async def test_query_embedding_is_a_single_vector(fake_api: FakeEmbeddingsAPI) -
     assert len(fake_api.calls) == 1
 
 
-def test_model_that_cannot_truncate_is_rejected(
-    fake_api: FakeEmbeddingsAPI, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A fixed-width model that does not match the configured width must fail loudly."""
-    monkeypatch.setitem(
-        __import__("zk2.llm.openai_provider", fromlist=["_EMB_NATIVE_DIM"])._EMB_NATIVE_DIM,
-        "legacy-model",
-        3072,
-    )
+def test_model_that_cannot_truncate_is_rejected(fake_api: FakeEmbeddingsAPI) -> None:
+    """A fixed-width model that does not match the configured width fails loudly."""
+    # BAAI/bge-m3 is 1024-wide and cannot truncate; the configured width is 1536
     with pytest.raises(ValidationError, match="does not support"):
-        OpenAIEmbeddings(api_key="sk-test", model="legacy-model")
+        OpenAIEmbeddings(api_key="sk-test", model="BAAI/bge-m3")
+
+
+async def test_model_outside_the_catalog_sends_no_dimensions_param(
+    fake_api: FakeEmbeddingsAPI,
+) -> None:
+    """An unlisted model still works - we just cannot ask it to truncate."""
+    provider = OpenAIEmbeddings(api_key="sk-test", model="some-new-embedding")
+    await provider.embed_documents(["text"])
+    assert "dimensions" not in fake_api.calls[0]

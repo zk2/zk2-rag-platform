@@ -14,12 +14,22 @@ from zk2.core.audit import write_audit
 from zk2.core.deps import get_db_dep
 from zk2.core.errors import ValidationError
 from zk2.core.security import encrypt
+from zk2.llm.catalog import Catalog, get_catalog
 from zk2.llm.models import LLMProviderConfig
 from zk2.llm.schemas import ProviderDto, ProviderUpsert
 
 SUPPORTED_PROVIDERS = {"openai", "anthropic", "gemini", "ollama"}
 
 router = APIRouter(prefix="/settings/providers", tags=["settings"])
+models_router = APIRouter(prefix="/settings/models", tags=["settings"])
+
+
+@models_router.get("", response_model=Catalog)
+async def list_models(
+    _ctx: Annotated[OrgContext, Depends(require_org("viewer"))],
+) -> Catalog:
+    """The model catalog: what the UI offers and what cost accounting uses."""
+    return get_catalog()
 
 
 def _to_dto(row: LLMProviderConfig) -> ProviderDto:

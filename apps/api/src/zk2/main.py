@@ -25,6 +25,7 @@ from zk2.core.logging import configure_logging
 from zk2.core.redis_client import close_redis
 from zk2.core.telemetry import instrument_sqlalchemy_engine, setup_telemetry
 from zk2.health import router as health_router
+from zk2.llm.router import models_router
 from zk2.llm.router import router as providers_router
 from zk2.sources.router import router as sources_router
 
@@ -74,6 +75,7 @@ def create_app() -> FastAPI:
     app.include_router(access_router)
     app.include_router(admin_router)
     app.include_router(providers_router)
+    app.include_router(models_router)
     app.include_router(sources_router)
     app.include_router(bots_router)
     app.include_router(chat_ws_router)

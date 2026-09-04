@@ -58,6 +58,7 @@ dependencies = [
     # Web scraping
     "ultimate-sitemap-parser>=1.1.1",
     # Misc
+    "pyyaml>=6.0.2",
     "click>=8.1.7",
     "python-slugify>=8.0.4",
 ]
@@ -66,6 +67,7 @@ dependencies = [
 dev = [
     "ruff>=0.7.0",
     "mypy>=1.13.0",
+    "types-PyYAML>=6.0.12",
     "pytest>=8.3.0",
     "pytest-asyncio>=0.24.0",
     "pytest-cov>=6.0.0",

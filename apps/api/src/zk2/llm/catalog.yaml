@@ -1,0 +1,144 @@
+# Model catalog - the single source of truth for model ids, pricing, context
+# windows and capabilities. Nothing about a model belongs in provider code.
+#
+# Consumers: cost accounting (usage_events, billing), the model selector in the
+# UI, and validation of bot settings.
+#
+# Prices are USD per million tokens. Verify against the provider's own pricing
+# page when adding a model; Anthropic and OpenAI both expose a models endpoint
+# (GET /v1/models) that reports context windows and output caps.
+#
+# `max_output_tokens: null` means "not pinned here" - the provider's default applies.
+
+chat:
+  # ─── Anthropic (verified 2026-06-24) ───────────────────────────────
+  - id: claude-opus-5
+    provider: anthropic
+    display_name: Claude Opus 5
+    context_window: 1000000
+    max_output_tokens: 128000
+    supports_tools: true
+    supports_vision: true
+    price_in_per_mtok: "5.00"
+    price_out_per_mtok: "25.00"
+
+  - id: claude-sonnet-5
+    provider: anthropic
+    display_name: Claude Sonnet 5
+    context_window: 1000000
+    max_output_tokens: 128000
+    supports_tools: true
+    supports_vision: true
+    price_in_per_mtok: "2.00"
+    price_out_per_mtok: "10.00"
+
+  - id: claude-opus-4-8
+    provider: anthropic
+    display_name: Claude Opus 4.8
+    context_window: 1000000
+    max_output_tokens: 128000
+    supports_tools: true
+    supports_vision: true
+    price_in_per_mtok: "5.00"
+    price_out_per_mtok: "25.00"
+
+  - id: claude-haiku-4-5
+    provider: anthropic
+    display_name: Claude Haiku 4.5
+    context_window: 200000
+    max_output_tokens: null
+    supports_tools: true
+    supports_vision: true
+    price_in_per_mtok: "1.00"
+    price_out_per_mtok: "5.00"
+
+  # ─── OpenAI ────────────────────────────────────────────────────────
+  - id: gpt-4.1
+    provider: openai
+    display_name: GPT-4.1
+    context_window: 1047576
+    max_output_tokens: 32768
+    supports_tools: true
+    supports_vision: true
+    price_in_per_mtok: "3.00"
+    price_out_per_mtok: "12.00"
+
+  - id: gpt-4.1-mini
+    provider: openai
+    display_name: GPT-4.1 mini
+    context_window: 1047576
+    max_output_tokens: 32768
+    supports_tools: true
+    supports_vision: true
+    price_in_per_mtok: "0.40"
+    price_out_per_mtok: "1.60"
+
+  - id: gpt-4o
+    provider: openai
+    display_name: GPT-4o
+    context_window: 128000
+    max_output_tokens: 16384
+    supports_tools: true
+    supports_vision: true
+    price_in_per_mtok: "2.50"
+    price_out_per_mtok: "10.00"
+
+  - id: gpt-4o-mini
+    provider: openai
+    display_name: GPT-4o mini
+    context_window: 128000
+    max_output_tokens: 16384
+    supports_tools: true
+    supports_vision: true
+    price_in_per_mtok: "0.15"
+    price_out_per_mtok: "0.60"
+
+  # ─── Local (Ollama) - no per-token price, the hardware is the cost ──
+  - id: llama3.1:8b
+    provider: ollama
+    display_name: Llama 3.1 8B (local)
+    context_window: 131072
+    max_output_tokens: null
+    supports_tools: true
+    supports_vision: false
+    price_in_per_mtok: "0"
+    price_out_per_mtok: "0"
+
+  - id: qwen2.5:7b
+    provider: ollama
+    display_name: Qwen 2.5 7B (local)
+    context_window: 131072
+    max_output_tokens: null
+    supports_tools: true
+    supports_vision: false
+    price_in_per_mtok: "0"
+    price_out_per_mtok: "0"
+
+embedding:
+  - id: text-embedding-3-small
+    provider: openai
+    display_name: OpenAI embedding 3 small
+    native_dimensions: 1536
+    supports_dimensions: true
+    price_in_per_mtok: "0.02"
+
+  - id: text-embedding-3-large
+    provider: openai
+    display_name: OpenAI embedding 3 large
+    native_dimensions: 3072
+    supports_dimensions: true
+    price_in_per_mtok: "0.13"
+
+  - id: BAAI/bge-m3
+    provider: local
+    display_name: BGE-M3 (local)
+    native_dimensions: 1024
+    supports_dimensions: false
+    price_in_per_mtok: "0"
+
+  - id: nomic-embed-text-v1.5
+    provider: local
+    display_name: Nomic Embed v1.5 (local)
+    native_dimensions: 768
+    supports_dimensions: true
+    price_in_per_mtok: "0"

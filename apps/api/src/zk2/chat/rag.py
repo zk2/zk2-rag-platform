@@ -167,9 +167,13 @@ async def _record_usage(
     version: BotVersion,
     tokens_in: int,
     tokens_out: int,
-    cost: Decimal,
+    cost: Decimal | None,
 ) -> None:
-    """Write a usage_event. No ORM model yet - the billing work adds one."""
+    """Write a usage_event. No ORM model yet - the billing work adds one.
+
+    `cost` is NULL when the model is not in the catalog: an unknown price
+    recorded as zero would quietly under-report spend.
+    """
     await db.execute(
         text(
             "INSERT INTO usage_events "
@@ -187,7 +191,7 @@ async def _record_usage(
             "tin": tokens_in,
             "tout": tokens_out,
             "cost": cost,
-            "meta": "{}",
+            "meta": "{}" if cost is not None else '{"cost_unknown": true}',
         },
     )
 
@@ -279,7 +283,7 @@ async def stream_rag(
         {
             "tokens_in": tokens_in,
             "tokens_out": tokens_out,
-            "cost_usd": str(cost),
+            "cost_usd": str(cost) if cost is not None else None,
             "latency_ms": latency_ms,
         },
     )

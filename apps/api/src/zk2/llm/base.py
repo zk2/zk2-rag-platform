@@ -40,7 +40,9 @@ class LLMProvider(ABC):
     ) -> AsyncIterator[CompletionChunk]: ...
 
     @abstractmethod
-    def estimate_cost(self, model: str, *, tokens_in: int, tokens_out: int) -> Decimal: ...
+    def estimate_cost(self, model: str, *, tokens_in: int, tokens_out: int) -> Decimal | None:
+        """USD for one call, or None when the model is not in the catalog."""
+        ...
 
 
 class EmbeddingProvider(ABC):

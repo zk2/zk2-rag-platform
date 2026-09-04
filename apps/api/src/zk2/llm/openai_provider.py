@@ -4,38 +4,15 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Sequence
 from decimal import Decimal
-from typing import Any, Final
+from typing import Any
 
 from openai import AsyncOpenAI
 
 from zk2.config import get_settings
 from zk2.core.errors import ValidationError
 from zk2.llm.base import CompletionChunk, EmbeddingProvider, LLMProvider, Message
-
-# Approximate USD per 1M tokens (kept rough; see https://openai.com/pricing).
-_PRICE_PER_1M: Final[dict[str, tuple[Decimal, Decimal]]] = {
-    "gpt-4o": (Decimal("2.50"), Decimal("10.00")),
-    "gpt-4o-mini": (Decimal("0.15"), Decimal("0.60")),
-    "gpt-4.1": (Decimal("3.00"), Decimal("12.00")),
-    "gpt-4.1-mini": (Decimal("0.40"), Decimal("1.60")),
-    "o3-mini": (Decimal("1.10"), Decimal("4.40")),
-    # embeddings (input only, output 0)
-    "text-embedding-3-small": (Decimal("0.02"), Decimal("0")),
-    "text-embedding-3-large": (Decimal("0.13"), Decimal("0")),
-}
-
-# Native width of each embedding model. We do not store vectors at these widths:
-# every model is normalised to EMBEDDING_DIMENSIONS (1536) because pgvector caps
-# HNSW at 2000 dimensions - see ADR-0004.
-_EMB_NATIVE_DIM: Final[dict[str, int]] = {
-    "text-embedding-3-small": 1536,
-    "text-embedding-3-large": 3072,
-}
-
-# Models that accept the `dimensions` request parameter (Matryoshka truncation).
-_SUPPORTS_DIMENSIONS: Final[frozenset[str]] = frozenset(
-    {"text-embedding-3-small", "text-embedding-3-large"}
-)
+from zk2.llm.catalog import estimate_cost as catalog_cost
+from zk2.llm.catalog import get_catalog
 
 
 class OpenAIProvider(LLMProvider):
@@ -88,14 +65,8 @@ class OpenAIProvider(LLMProvider):
                     tokens_out=final.usage.completion_tokens,
                 )
 
-    def estimate_cost(self, model: str, *, tokens_in: int, tokens_out: int) -> Decimal:
-        price = _PRICE_PER_1M.get(model)
-        if price is None:
-            return Decimal("0")
-        in_price, out_price = price
-        return (
-            (Decimal(tokens_in) * in_price + Decimal(tokens_out) * out_price) / Decimal("1000000")
-        ).quantize(Decimal("0.000001"))
+    def estimate_cost(self, model: str, *, tokens_in: int, tokens_out: int) -> Decimal | None:
+        return catalog_cost(model, tokens_in=tokens_in, tokens_out=tokens_out)
 
 
 class OpenAIEmbeddings(EmbeddingProvider):
@@ -110,11 +81,17 @@ class OpenAIEmbeddings(EmbeddingProvider):
         self._batch_size = settings.embedding_batch_size
         self._client = AsyncOpenAI(api_key=api_key)
 
-        native = _EMB_NATIVE_DIM.get(model)
-        if model not in _SUPPORTS_DIMENSIONS and native is not None and native != self.dimensions:
+        spec = get_catalog().embedding_model(model)
+        self._supports_dimensions = spec.supports_dimensions if spec else False
+        if (
+            spec is not None
+            and not spec.supports_dimensions
+            and spec.native_dimensions != self.dimensions
+        ):
             msg = (
-                f"{model} returns {native}-dimensional vectors and does not support "
-                f"the `dimensions` parameter; configured width is {self.dimensions}"
+                f"{model} returns {spec.native_dimensions}-dimensional vectors and "
+                f"does not support the `dimensions` parameter; configured width is "
+                f"{self.dimensions}"
             )
             raise ValidationError(msg)
 
@@ -127,7 +104,7 @@ class OpenAIEmbeddings(EmbeddingProvider):
         for start in range(0, len(texts), self._batch_size):
             batch = texts[start : start + self._batch_size]
             kwargs: dict[str, Any] = {"model": self.model, "input": batch}
-            if self.model in _SUPPORTS_DIMENSIONS:
+            if self._supports_dimensions:
                 kwargs["dimensions"] = self.dimensions
             resp = await self._client.embeddings.create(**kwargs)
             vectors.extend(d.embedding for d in resp.data)
