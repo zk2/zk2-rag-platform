@@ -10,7 +10,14 @@ import { wsUrl } from "@/lib/ws";
 type Msg = {
   role: "user" | "assistant";
   content: string;
-  sources?: Array<{ chunk_id: number; source_id: number; name: string; ordinal: number; score?: number }>;
+  sources?: Array<{
+    chunk_id: number;
+    source_id: number;
+    name: string;
+    ordinal: number;
+    score?: number;
+    matched_by?: string[];
+  }>;
   usage?: { tokens_in: number; tokens_out: number; cost_usd: string; latency_ms: number };
 };
 
@@ -168,6 +175,14 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
   );
 }
 
+/** Compact marker for which retriever surfaced a chunk. */
+function retrieverBadge(retriever: string): string {
+  if (retriever === "dense") return "V";
+  if (retriever === "bm25") return "T";
+  if (retriever === "rerank") return "R";
+  return "?";
+}
+
 function MessageBubble({ msg }: { msg: Msg }) {
   return (
     <div className={msg.role === "user" ? "text-right" : ""}>
@@ -181,16 +196,26 @@ function MessageBubble({ msg }: { msg: Msg }) {
         {msg.content || (msg.role === "assistant" ? "…" : "")}
       </div>
       {msg.sources && msg.sources.length > 0 && (
-        <div className="mt-1 flex flex-wrap gap-1">
-          {msg.sources.map((s) => (
-            <span
-              key={s.chunk_id}
-              className="text-[10px] bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded"
-              title={`score=${s.score ?? "?"}`}
-            >
-              {s.name}#{s.ordinal}
-            </span>
-          ))}
+        <div className="mt-1 space-y-1">
+          <div className="flex flex-wrap gap-1">
+            {msg.sources.map((s) => (
+              <span
+                key={s.chunk_id}
+                className="text-[10px] bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded"
+                title={`score ${s.score?.toFixed(4) ?? "?"} · found by ${
+                  s.matched_by?.join(" + ") ?? "retrieval"
+                }`}
+              >
+                {s.name}#{s.ordinal}
+                {s.matched_by && s.matched_by.length > 0 && (
+                  <span className="ml-1 text-amber-600">{s.matched_by.map(retrieverBadge).join("")}</span>
+                )}
+              </span>
+            ))}
+          </div>
+          <div className="text-[10px] text-slate-400">
+            V dense · T lexical · both means the retrievers agreed
+          </div>
         </div>
       )}
       {msg.usage && (

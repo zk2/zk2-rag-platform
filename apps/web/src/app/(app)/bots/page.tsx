@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
+import { formatPrice, useCatalog } from "@/lib/catalog";
 import { Trash2, MessageSquare } from "lucide-react";
 
 type Bot = {
@@ -97,7 +98,9 @@ function CreateBotCard() {
   const [systemPrompt, setSystemPrompt] = useState(
     "You are a helpful assistant grounded in the attached sources.",
   );
+  const catalog = useCatalog();
   const [model, setModel] = useState("gpt-4o-mini");
+  const selectedModel = catalog.data?.chat.find((m) => m.id === model);
   const [numK, setNumK] = useState(5);
   const [selected, setSelected] = useState<number[]>([]);
 
@@ -106,7 +109,7 @@ function CreateBotCard() {
       api.post<Bot>("/bots", {
         name,
         system_prompt: systemPrompt,
-        llm_provider: "openai",
+        llm_provider: selectedModel?.provider ?? "openai",
         llm_model: model,
         temperature: 0,
         num_k: numK,
@@ -139,7 +142,25 @@ function CreateBotCard() {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <Label htmlFor="bot-model">Model</Label>
-            <Input id="bot-model" value={model} onChange={(e) => setModel(e.target.value)} />
+            <select
+              id="bot-model"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              className="w-full h-9 rounded border border-slate-300 px-2 text-sm bg-white"
+            >
+              {catalog.data?.chat.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.display_name}
+                </option>
+              ))}
+              {!catalog.data && <option value={model}>{model}</option>}
+            </select>
+            {selectedModel && (
+              <p className="mt-1 text-[10px] text-slate-500">
+                {selectedModel.provider} · {(selectedModel.context_window / 1000).toFixed(0)}k
+                context · {formatPrice(selectedModel)}
+              </p>
+            )}
           </div>
           <div>
             <Label htmlFor="bot-k">k</Label>
