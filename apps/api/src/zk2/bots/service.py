@@ -32,6 +32,7 @@ async def hydrate_bot(db: AsyncSession, bot: Bot) -> BotDto:
         temperature=version.temperature if version else 0.0,
         num_k=version.num_k if version else 5,
         source_ids=source_ids,
+        pipeline_id=bot.pipeline_id,
         current_version_id=bot.current_version_id,
         created_at=bot.created_at,
         updated_at=bot.updated_at,
@@ -39,7 +40,7 @@ async def hydrate_bot(db: AsyncSession, bot: Bot) -> BotDto:
 
 
 async def create_bot(db: AsyncSession, *, org_id: int, user: User, payload: BotCreate) -> BotDto:
-    bot = Bot(org_id=org_id, name=payload.name)
+    bot = Bot(org_id=org_id, name=payload.name, pipeline_id=payload.pipeline_id)
     db.add(bot)
     await db.flush()
     version = BotVersion(
@@ -82,9 +83,12 @@ async def patch_bot(
     bot = await get_bot(db, org_id=org_id, bot_id=bot_id)
     if payload.name is not None:
         bot.name = payload.name
+    # The pipeline lives on the bot, not on a version: explicit null means
+    # "go back to the built-in default", which is why fields_set is consulted
+    if "pipeline_id" in payload.model_fields_set:
+        bot.pipeline_id = payload.pipeline_id
     # If anything that lives on a version changes, snapshot a new version
-    version_fields = {"system_prompt", "llm_provider", "llm_model", "temperature", "num_k"}
-    diff = payload.model_dump(exclude_unset=True, exclude={"name", "source_ids"})
+    diff = payload.model_dump(exclude_unset=True, exclude={"name", "source_ids", "pipeline_id"})
     if diff and bot.current_version_id is not None:
         current = await db.scalar(select(BotVersion).where(BotVersion.id == bot.current_version_id))
         new_version = BotVersion(
@@ -105,7 +109,6 @@ async def patch_bot(
             db.add_all(BotSource(bot_id=bot.id, source_id=s) for s in payload.source_ids)
     bot.updated_at = datetime.now(UTC)
     await db.flush()
-    _ = version_fields  # marker for static analyzers
     return await hydrate_bot(db, bot)
 
 

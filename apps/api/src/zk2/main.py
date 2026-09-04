@@ -32,6 +32,7 @@ from zk2.llm.router import models_router
 from zk2.llm.router import router as providers_router
 from zk2.observability.router import router as observability_router
 from zk2.orgs.router import router as org_settings_router
+from zk2.pipelines.router import router as pipelines_router
 from zk2.sources.router import router as sources_router
 
 
@@ -91,6 +92,7 @@ def create_app() -> FastAPI:
     app.include_router(org_settings_router)
     app.include_router(sources_router)
     app.include_router(bots_router)
+    app.include_router(pipelines_router)
     app.include_router(chat_ws_router)
 
     return app

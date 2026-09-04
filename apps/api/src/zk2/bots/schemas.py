@@ -19,6 +19,8 @@ class BotCreate(BaseModel):
     temperature: float = Field(0, ge=0, le=2)
     num_k: int = Field(5, ge=1, le=20)
     source_ids: list[int] = []
+    # None keeps the built-in default pipeline
+    pipeline_id: int | None = None
 
 
 class BotPatch(BaseModel):
@@ -29,6 +31,7 @@ class BotPatch(BaseModel):
     temperature: float | None = Field(None, ge=0, le=2)
     num_k: int | None = Field(None, ge=1, le=20)
     source_ids: list[int] | None = None
+    pipeline_id: int | None = None
 
 
 class BotDto(_Dto):
@@ -40,6 +43,7 @@ class BotDto(_Dto):
     temperature: float
     num_k: int
     source_ids: list[int]
+    pipeline_id: int | None
     current_version_id: int | None
     created_at: datetime
     updated_at: datetime
