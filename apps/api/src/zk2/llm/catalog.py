@@ -33,6 +33,9 @@ class ChatModel(BaseModel):
     max_output_tokens: int | None = None
     supports_tools: bool = False
     supports_vision: bool = False
+    # Sampling parameters were removed on the newest Claude models: sending
+    # temperature to them is a 400, so the adapter has to know.
+    supports_temperature: bool = True
     price_in_per_mtok: Decimal
     price_out_per_mtok: Decimal
     kind: Literal["chat"] = "chat"

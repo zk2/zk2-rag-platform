@@ -3,6 +3,9 @@
 Lookup order for API keys:
 1. Org-scoped key in llm_providers table (encrypted)
 2. Process-wide fallback from env / settings
+
+Local providers (Ollama) need a base URL rather than a key: per-org first, then
+the deployment default.
 """
 
 from __future__ import annotations
@@ -13,18 +16,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from zk2.config import get_settings
 from zk2.core.errors import ValidationError
 from zk2.core.security import decrypt
+from zk2.llm.anthropic_provider import AnthropicProvider
 from zk2.llm.base import EmbeddingProvider, LLMProvider
+from zk2.llm.gemini_provider import GeminiProvider
 from zk2.llm.models import LLMProviderConfig
+from zk2.llm.ollama_provider import OllamaProvider
 from zk2.llm.openai_provider import OpenAIEmbeddings, OpenAIProvider
 
+KEY_PROVIDERS = ("openai", "anthropic", "gemini")
 
-async def _get_api_key(db: AsyncSession, org_id: int, provider: str) -> str | None:
-    row = await db.scalar(
+
+async def _get_config(db: AsyncSession, org_id: int, provider: str) -> LLMProviderConfig | None:
+    row: LLMProviderConfig | None = await db.scalar(
         select(LLMProviderConfig).where(
             LLMProviderConfig.org_id == org_id,
             LLMProviderConfig.provider == provider,
         )
     )
+    return row
+
+
+async def _get_api_key(db: AsyncSession, org_id: int, provider: str) -> str | None:
+    row = await _get_config(db, org_id, provider)
     if row is not None and row.api_key_encrypted:
         return decrypt(row.api_key_encrypted)
     settings = get_settings().llm
@@ -36,14 +49,38 @@ async def _get_api_key(db: AsyncSession, org_id: int, provider: str) -> str | No
     return fallback.get_secret_value() if fallback else None
 
 
+async def _require_key(db: AsyncSession, org_id: int, provider: str) -> str:
+    key = await _get_api_key(db, org_id, provider)
+    if not key:
+        raise ValidationError(f"{provider} API key not configured for this organization")
+    return key
+
+
+async def _ollama_base_url(db: AsyncSession, org_id: int) -> str:
+    row = await _get_config(db, org_id, "ollama")
+    if row is not None and row.custom_base_url:
+        return row.custom_base_url
+    return get_settings().llm.ollama_base_url
+
+
 async def get_llm_provider(db: AsyncSession, *, org_id: int, provider: str) -> LLMProvider:
     if provider == "openai":
-        key = await _get_api_key(db, org_id, "openai")
-        if not key:
-            raise ValidationError("OpenAI API key not configured for this org")
-        return OpenAIProvider(api_key=key)
-    msg = f"LLM provider {provider!r} not yet supported"
-    raise ValidationError(msg)
+        row = await _get_config(db, org_id, "openai")
+        return OpenAIProvider(
+            api_key=await _require_key(db, org_id, "openai"),
+            base_url=row.custom_base_url if row else None,
+        )
+    if provider == "anthropic":
+        row = await _get_config(db, org_id, "anthropic")
+        return AnthropicProvider(
+            api_key=await _require_key(db, org_id, "anthropic"),
+            base_url=row.custom_base_url if row else None,
+        )
+    if provider == "gemini":
+        return GeminiProvider(api_key=await _require_key(db, org_id, "gemini"))
+    if provider == "ollama":
+        return OllamaProvider(base_url=await _ollama_base_url(db, org_id))
+    raise ValidationError(f"Unknown LLM provider: {provider!r}")
 
 
 async def get_embedding_provider(
@@ -54,9 +91,6 @@ async def get_embedding_provider(
     model: str = "text-embedding-3-small",
 ) -> EmbeddingProvider:
     if provider == "openai":
-        key = await _get_api_key(db, org_id, "openai")
-        if not key:
-            raise ValidationError("OpenAI API key not configured for this org")
-        return OpenAIEmbeddings(api_key=key, model=model)
+        return OpenAIEmbeddings(api_key=await _require_key(db, org_id, "openai"), model=model)
     msg = f"Embedding provider {provider!r} not yet supported"
     raise ValidationError(msg)
