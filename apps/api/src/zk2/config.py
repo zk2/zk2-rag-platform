@@ -140,6 +140,8 @@ class IngestSettings(_Base):
     # Only for local testing against a private address. Never enable in prod.
     allow_private_networks: bool = Field(False, alias="SSRF_ALLOW_PRIVATE_NETWORKS")
     embedding_batch_size: int = Field(100, alias="EMBEDDING_BATCH_SIZE")
+    # pgvector cannot build HNSW above 2000 dimensions - see ADR-0004
+    embedding_dimensions: int = Field(1536, alias="EMBEDDING_DIMENSIONS", le=2000)
 
 
 class ChatSettings(_Base):

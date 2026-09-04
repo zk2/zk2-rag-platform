@@ -24,8 +24,8 @@ export default function SourcesPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Sources</h1>
         <p className="text-slate-500 text-sm mt-1">
-          Upload documents or add URLs. Each file is chunked and embedded; the bot retrieves
-          relevant chunks at query time.
+          Upload documents or add URLs. Each file is chunked and embedded; the
+          bot retrieves relevant chunks at query time.
         </p>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -36,6 +36,7 @@ export default function SourcesPage() {
           <CreateDirectoryCard />
           <UploadFileCard />
           <AddUrlCard />
+          <ImportSitemapCard />
         </div>
       </div>
     </div>
@@ -77,7 +78,9 @@ function Tree() {
           <p className="text-slate-500 text-sm">No sources yet. Add one →</p>
         )}
         <ul className="space-y-1">
-          {list.data?.map((n) => <NodeRow key={n.id} node={n} depth={0} />)}
+          {list.data?.map((n) => (
+            <NodeRow key={n.id} node={n} depth={0} />
+          ))}
         </ul>
       </CardContent>
     </Card>
@@ -90,7 +93,8 @@ function NodeRow({ node, depth }: { node: Node; depth: number }) {
     mutationFn: () => api.delete(`/sources/${node.id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["sources", "tree"] }),
   });
-  const Icon = node.type === "directory" ? Folder : node.type === "web" ? Globe : FileText;
+  const Icon =
+    node.type === "directory" ? Folder : node.type === "web" ? Globe : FileText;
   const color =
     node.status === "ready"
       ? "text-emerald-600"
@@ -106,12 +110,15 @@ function NodeRow({ node, depth }: { node: Node; depth: number }) {
         <div className="flex items-center gap-2 min-w-0">
           <Icon className="size-4 text-slate-500 shrink-0" />
           <span className="text-sm text-slate-900 truncate">{node.name}</span>
-          <span className={cn("text-[10px] uppercase tracking-wide", color)}>{node.status}</span>
+          <span className={cn("text-[10px] uppercase tracking-wide", color)}>
+            {node.status}
+          </span>
         </div>
         <button
           className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-600"
           onClick={() => {
-            if (confirm(`Delete "${node.name}" and its sub-tree?`)) del.mutate();
+            if (confirm(`Delete "${node.name}" and its sub-tree?`))
+              del.mutate();
           }}
           title="Delete"
         >
@@ -120,7 +127,9 @@ function NodeRow({ node, depth }: { node: Node; depth: number }) {
       </div>
       {node.children.length > 0 && (
         <ul>
-          {node.children.map((c) => <NodeRow key={c.id} node={c} depth={depth + 1} />)}
+          {node.children.map((c) => (
+            <NodeRow key={c.id} node={c} depth={depth + 1} />
+          ))}
         </ul>
       )}
     </li>
@@ -139,14 +148,20 @@ function CreateDirectoryCard() {
   });
   return (
     <Card>
-      <CardHeader><CardTitle>New folder</CardTitle></CardHeader>
+      <CardHeader>
+        <CardTitle>New folder</CardTitle>
+      </CardHeader>
       <CardContent className="space-y-3">
         <Input
           placeholder="Folder name"
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
-        <Button onClick={() => m.mutate()} disabled={!name || m.isPending} className="w-full">
+        <Button
+          onClick={() => m.mutate()}
+          disabled={!name || m.isPending}
+          className="w-full"
+        >
           Create
         </Button>
       </CardContent>
@@ -160,7 +175,11 @@ function UploadFileCard() {
   const [parentId, setParentId] = useState<string>("");
   const m = useMutation({
     mutationFn: (file: File) =>
-      api.upload("/sources/file", file, parentId ? { parent_id: parentId } : {}),
+      api.upload(
+        "/sources/file",
+        file,
+        parentId ? { parent_id: parentId } : {},
+      ),
     onSuccess: () => {
       if (inputRef.current) inputRef.current.value = "";
       qc.invalidateQueries({ queryKey: ["sources", "tree"] });
@@ -168,7 +187,9 @@ function UploadFileCard() {
   });
   return (
     <Card>
-      <CardHeader><CardTitle>Upload file</CardTitle></CardHeader>
+      <CardHeader>
+        <CardTitle>Upload file</CardTitle>
+      </CardHeader>
       <CardContent className="space-y-3">
         <Label htmlFor="up-parent">Parent folder ID (optional)</Label>
         <Input
@@ -187,7 +208,9 @@ function UploadFileCard() {
           }}
         />
         {m.isPending && <p className="text-xs text-slate-500">Uploading…</p>}
-        {m.error && <p className="text-xs text-red-600">{(m.error as Error).message}</p>}
+        {m.error && (
+          <p className="text-xs text-red-600">{(m.error as Error).message}</p>
+        )}
       </CardContent>
     </Card>
   );
@@ -210,17 +233,155 @@ function AddUrlCard() {
   });
   return (
     <Card>
-      <CardHeader><CardTitle>Add URL</CardTitle></CardHeader>
+      <CardHeader>
+        <CardTitle>Add URL</CardTitle>
+      </CardHeader>
       <CardContent className="space-y-3">
-        <Input placeholder="https://…" value={url} onChange={(e) => setUrl(e.target.value)} />
+        <Input
+          placeholder="https://…"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+        />
         <Input
           placeholder="Parent folder ID (optional)"
           value={parentId}
           onChange={(e) => setParentId(e.target.value)}
         />
-        <Button onClick={() => m.mutate()} disabled={!url || m.isPending} className="w-full">
+        <Button
+          onClick={() => m.mutate()}
+          disabled={!url || m.isPending}
+          className="w-full"
+        >
           Fetch & index
         </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+type SitemapPreview = {
+  base_url: string;
+  total_found: number;
+  would_import: number;
+  urls: string[];
+};
+
+// Rough per-page estimate, only ever shown as an order of magnitude.
+const TOKENS_PER_PAGE = 1500;
+
+function ImportSitemapCard() {
+  const qc = useQueryClient();
+  const [baseUrl, setBaseUrl] = useState("");
+  const [limit, setLimit] = useState("100");
+  const [preview, setPreview] = useState<SitemapPreview | null>(null);
+
+  const previewM = useMutation({
+    mutationFn: () =>
+      api.post<SitemapPreview>("/sources/sitemap/preview", {
+        base_url: baseUrl,
+        limit: Number(limit),
+      }),
+    onSuccess: (data) => setPreview(data),
+  });
+
+  const importM = useMutation({
+    mutationFn: () =>
+      api.post("/sources/sitemap", {
+        base_url: baseUrl,
+        limit: Number(limit),
+        parent_id: null,
+      }),
+    onSuccess: () => {
+      setPreview(null);
+      setBaseUrl("");
+      qc.invalidateQueries({ queryKey: ["sources", "tree"] });
+    },
+  });
+
+  const error = (previewM.error ?? importM.error) as Error | null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Import sitemap</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <Input
+          placeholder="https://example.com"
+          value={baseUrl}
+          onChange={(e) => {
+            setBaseUrl(e.target.value);
+            setPreview(null);
+          }}
+        />
+        <div className="space-y-1">
+          <Label htmlFor="sitemap-limit">Max pages</Label>
+          <Input
+            id="sitemap-limit"
+            value={limit}
+            onChange={(e) => {
+              setLimit(e.target.value);
+              setPreview(null);
+            }}
+            inputMode="numeric"
+          />
+        </div>
+
+        {!preview && (
+          <Button
+            onClick={() => previewM.mutate()}
+            disabled={!baseUrl || previewM.isPending}
+            className="w-full"
+          >
+            {previewM.isPending ? "Scanning sitemap…" : "Preview"}
+          </Button>
+        )}
+
+        {preview && (
+          <div className="rounded border border-slate-200 bg-slate-50 p-3 space-y-2">
+            <p className="text-sm text-slate-900">
+              Found <strong>{preview.total_found}</strong> pages, will import{" "}
+              <strong>{preview.would_import}</strong>.
+            </p>
+            <p className="text-xs text-slate-500">
+              Each page is fetched and embedded: roughly{" "}
+              {Math.round((preview.would_import * TOKENS_PER_PAGE) / 1000)}k
+              tokens of embedding work. This is billed to your provider key.
+            </p>
+            <ul className="text-xs text-slate-500 space-y-0.5 max-h-24 overflow-y-auto">
+              {preview.urls.map((u) => (
+                <li key={u} className="truncate">
+                  {u}
+                </li>
+              ))}
+              {preview.total_found > preview.urls.length && (
+                <li className="text-slate-400">
+                  …and {preview.total_found - preview.urls.length} more
+                </li>
+              )}
+            </ul>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => importM.mutate()}
+                disabled={importM.isPending || preview.would_import === 0}
+                className="flex-1"
+              >
+                {importM.isPending
+                  ? "Queueing…"
+                  : `Import ${preview.would_import}`}
+              </Button>
+              <Button
+                onClick={() => setPreview(null)}
+                disabled={importM.isPending}
+                className="flex-1 bg-white text-slate-700 border border-slate-300 hover:bg-slate-50"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {error && <p className="text-xs text-red-600">{error.message}</p>}
       </CardContent>
     </Card>
   );

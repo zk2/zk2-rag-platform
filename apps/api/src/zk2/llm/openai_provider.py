@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Sequence
 from decimal import Decimal
-from typing import Final
+from typing import Any, Final
 
 from openai import AsyncOpenAI
 
+from zk2.config import get_settings
+from zk2.core.errors import ValidationError
 from zk2.llm.base import CompletionChunk, EmbeddingProvider, LLMProvider, Message
 
 # Approximate USD per 1M tokens (kept rough; see https://openai.com/pricing).
@@ -22,10 +24,18 @@ _PRICE_PER_1M: Final[dict[str, tuple[Decimal, Decimal]]] = {
     "text-embedding-3-large": (Decimal("0.13"), Decimal("0")),
 }
 
-_EMB_DIM: Final[dict[str, int]] = {
+# Native width of each embedding model. We do not store vectors at these widths:
+# every model is normalised to EMBEDDING_DIMENSIONS (1536) because pgvector caps
+# HNSW at 2000 dimensions - see ADR-0004.
+_EMB_NATIVE_DIM: Final[dict[str, int]] = {
     "text-embedding-3-small": 1536,
     "text-embedding-3-large": 3072,
 }
+
+# Models that accept the `dimensions` request parameter (Matryoshka truncation).
+_SUPPORTS_DIMENSIONS: Final[frozenset[str]] = frozenset(
+    {"text-embedding-3-small", "text-embedding-3-large"}
+)
 
 
 class OpenAIProvider(LLMProvider):
@@ -91,16 +101,37 @@ class OpenAIProvider(LLMProvider):
 class OpenAIEmbeddings(EmbeddingProvider):
     name = "openai"
 
-    def __init__(self, api_key: str, model: str = "text-embedding-3-small") -> None:
+    def __init__(
+        self, api_key: str, model: str = "text-embedding-3-small", dimensions: int | None = None
+    ) -> None:
+        settings = get_settings().ingest
         self.model = model
-        self.dimensions = _EMB_DIM.get(model, 1536)
+        self.dimensions = settings.embedding_dimensions if dimensions is None else dimensions
+        self._batch_size = settings.embedding_batch_size
         self._client = AsyncOpenAI(api_key=api_key)
 
+        native = _EMB_NATIVE_DIM.get(model)
+        if model not in _SUPPORTS_DIMENSIONS and native is not None and native != self.dimensions:
+            msg = (
+                f"{model} returns {native}-dimensional vectors and does not support "
+                f"the `dimensions` parameter; configured width is {self.dimensions}"
+            )
+            raise ValidationError(msg)
+
     async def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        """Embed in batches: a single large document can otherwise exceed the
+        request limit, and one failure would cost the whole document."""
         if not texts:
             return []
-        resp = await self._client.embeddings.create(model=self.model, input=texts)
-        return [d.embedding for d in resp.data]
+        vectors: list[list[float]] = []
+        for start in range(0, len(texts), self._batch_size):
+            batch = texts[start : start + self._batch_size]
+            kwargs: dict[str, Any] = {"model": self.model, "input": batch}
+            if self.model in _SUPPORTS_DIMENSIONS:
+                kwargs["dimensions"] = self.dimensions
+            resp = await self._client.embeddings.create(**kwargs)
+            vectors.extend(d.embedding for d in resp.data)
+        return vectors
 
     async def embed_query(self, text: str) -> list[float]:
         result = await self.embed_documents([text])
