@@ -60,8 +60,8 @@ def fake_llm(monkeypatch: pytest.MonkeyPatch) -> FakeLLM:
     async def _get_embeddings(*_args: object, **_kwargs: object) -> FakeEmbeddings:
         return FakeEmbeddings()
 
-    monkeypatch.setattr("zk2.chat.rag.get_llm_provider", _get_llm)
-    monkeypatch.setattr("zk2.chat.rag.get_embedding_provider", _get_embeddings)
+    monkeypatch.setattr("zk2.pipelines.nodes.get_llm_provider", _get_llm)
+    monkeypatch.setattr("zk2.pipelines.nodes.get_embedding_provider", _get_embeddings)
     monkeypatch.setattr("zk2.sources.ingest.get_embedding_provider", _get_embeddings)
     return llm
 
@@ -259,7 +259,7 @@ async def test_llm_failure_surfaces_as_error_event(
     async def _broken(*_args: object, **_kwargs: object) -> BrokenLLM:
         return BrokenLLM()
 
-    monkeypatch.setattr("zk2.chat.rag.get_llm_provider", _broken)
+    monkeypatch.setattr("zk2.pipelines.nodes.get_llm_provider", _broken)
 
     events = await _collect(
         stream_rag(
@@ -300,8 +300,8 @@ def citing_llm(monkeypatch: pytest.MonkeyPatch) -> CitingLLM:
     async def _get_embeddings(*_args: object, **_kwargs: object) -> FakeEmbeddings:
         return FakeEmbeddings()
 
-    monkeypatch.setattr("zk2.chat.rag.get_llm_provider", _get_llm)
-    monkeypatch.setattr("zk2.chat.rag.get_embedding_provider", _get_embeddings)
+    monkeypatch.setattr("zk2.pipelines.nodes.get_llm_provider", _get_llm)
+    monkeypatch.setattr("zk2.pipelines.nodes.get_embedding_provider", _get_embeddings)
     monkeypatch.setattr("zk2.sources.ingest.get_embedding_provider", _get_embeddings)
     return llm
 

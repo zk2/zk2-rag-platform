@@ -11,4 +11,5 @@ import zk2.auth.models
 import zk2.bots.models
 import zk2.llm.models
 import zk2.orgs.models
+import zk2.pipelines.models
 import zk2.sources.models

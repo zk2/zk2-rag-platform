@@ -1,11 +1,16 @@
-"""RAG orchestration: retrieve → assemble context → stream from LLM."""
+"""Chat turn orchestration.
+
+Retrieval and generation live in pipeline nodes; this module owns what wraps
+them - the conversation, the citation pass, persistence and the usage event.
+A bot with its own pipeline and a bot without take the same path: the default
+is a DAG like any other.
+"""
 
 from __future__ import annotations
 
 import re
 import time
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -16,34 +21,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from zk2.auth.models import User
 from zk2.bots.models import Bot, BotSource, BotVersion, Conversation, Message
-from zk2.config import get_settings
+from zk2.chat.events import StreamEvent
 from zk2.core.errors import NotFoundError, ValidationError
-from zk2.core.metrics import llm_errors_total, record_llm_call, record_retrieval
 from zk2.core.tracing import start_turn
-from zk2.llm.base import LLMProvider
-from zk2.llm.base import Message as LLMMessage
-from zk2.llm.registry import get_embedding_provider, get_llm_provider
-from zk2.retrieval.base import RetrievedChunk
-from zk2.retrieval.bm25 import bm25_search
-from zk2.retrieval.dense import dense_search
-from zk2.retrieval.fusion import reciprocal_rank_fusion
-from zk2.retrieval.rerank import rerank
-from zk2.sources.chunking import count_tokens
+from zk2.pipelines.dag import DagSpec
+from zk2.pipelines.defaults import DEFAULT_DAG
+from zk2.pipelines.models import Pipeline, PipelineVersion
+from zk2.pipelines.runtime import RunReport, execute
+from zk2.pipelines.state import NodeContext, PipelineState
 
 logger = structlog.get_logger()
 
-CONTEXT_TOKEN_BUDGET = 6000  # rough; leaves room for system prompt + answer
-# Each retriever returns more than the final k so fusion has something to fuse
-CANDIDATE_MULTIPLIER = 4
-MIN_CANDIDATES = 20
 # Markers the model is asked to cite: [1], [2][3], ...
 _CITATION_PATTERN = re.compile(r"\[(\d{1,2})\]")
-
-
-@dataclass(slots=True)
-class StreamEvent:
-    kind: str  # token | sources | done | error
-    payload: dict[str, Any]
 
 
 async def _load_bot(db: AsyncSession, *, org_id: int, bot_id: int) -> tuple[Bot, BotVersion]:
@@ -91,101 +81,6 @@ async def _resolve_conversation(
     return conv
 
 
-async def _retrieve(
-    db: AsyncSession,
-    *,
-    org_id: int,
-    source_ids: list[int],
-    query: str,
-    k: int,
-) -> list[RetrievedChunk]:
-    """Hybrid retrieval: dense and lexical candidates fused by RRF.
-
-    The two run in sequence rather than concurrently: an AsyncSession is a
-    single connection and will not serve two queries at once.
-    """
-    if not source_ids:
-        return []
-    candidates = max(k * CANDIDATE_MULTIPLIER, MIN_CANDIDATES)
-
-    emb = await get_embedding_provider(db, org_id=org_id)
-
-    started = time.perf_counter()
-    query_embedding = await emb.embed_query(query)
-    record_retrieval("embed_query", duration_seconds=time.perf_counter() - started, results=1)
-
-    started = time.perf_counter()
-    dense_hits = await dense_search(
-        db,
-        org_id=org_id,
-        source_ids=source_ids,
-        query_embedding=query_embedding,
-        embedding_model=emb.model,
-        k=candidates,
-    )
-    record_retrieval(
-        "dense", duration_seconds=time.perf_counter() - started, results=len(dense_hits)
-    )
-
-    started = time.perf_counter()
-    lexical_hits = await bm25_search(
-        db, org_id=org_id, source_ids=source_ids, query=query, k=candidates
-    )
-    record_retrieval(
-        "bm25", duration_seconds=time.perf_counter() - started, results=len(lexical_hits)
-    )
-
-    fused = reciprocal_rank_fusion(
-        [dense_hits, lexical_hits], limit=get_settings().retrieval.rerank_candidates
-    )
-    logger.debug(
-        "rag.retrieved",
-        dense=len(dense_hits),
-        bm25=len(lexical_hits),
-        fused=len(fused),
-        candidates=candidates,
-    )
-    # Reranking reads query and passage together, so it only runs on the short
-    # fused list. Disabled or unavailable, the fused order stands.
-    started = time.perf_counter()
-    reranked = await rerank(query, fused, top_k=k)
-    record_retrieval(
-        "rerank", duration_seconds=time.perf_counter() - started, results=len(reranked)
-    )
-    return reranked
-
-
-def _assemble_context(retrieved: list[RetrievedChunk]) -> tuple[list[str], list[dict[str, Any]]]:
-    """Pack retrieved chunks into the token budget, numbered for citation.
-
-    The number is what makes attribution possible: the model is asked to cite
-    [1], [2] and so on, and those markers are matched back to chunks after the
-    answer is generated.
-    """
-    context_parts: list[str] = []
-    used_chunks: list[dict[str, Any]] = []
-    used_tokens = 0
-    for r in retrieved:
-        marker = len(used_chunks) + 1
-        snippet = f"[{marker}] source: {r.source_name} (chunk {r.ordinal})\n{r.text}"
-        tokens = count_tokens(snippet)
-        if used_tokens + tokens > CONTEXT_TOKEN_BUDGET:
-            break
-        used_tokens += tokens
-        context_parts.append(snippet)
-        used_chunks.append(
-            {
-                "marker": marker,
-                "chunk_id": r.chunk_id,
-                "source_id": r.source_id,
-                "name": r.source_name,
-                "ordinal": r.ordinal,
-                "cited": False,
-            }
-        )
-    return context_parts, used_chunks
-
-
 def parse_citations(answer: str, context_chunks: list[dict[str, Any]]) -> list[int]:
     """Markers the answer actually cited, in the order they first appear.
 
@@ -214,44 +109,6 @@ def _citations_event(cited: list[dict[str, Any]]) -> StreamEvent:
                     "marker": c["marker"],
                 }
                 for c in cited
-            ]
-        },
-    )
-
-
-def _build_messages(
-    *, version: BotVersion, context_parts: list[str], user_message: str
-) -> list[LLMMessage]:
-    system_prompt = (version.system_prompt or "You are a helpful assistant.").strip()
-    if context_parts:
-        system_prompt += (
-            "\n\nAnswer using only the numbered passages below. "
-            "If they do not contain the answer, say so honestly.\n"
-            "Cite the passages you actually used by their number in square "
-            "brackets, like [1] or [2][3], right after the statement they "
-            "support. Do not cite a passage you did not use.\n\n"
-            "----- CONTEXT -----\n" + "\n\n".join(context_parts)
-        )
-    return [
-        LLMMessage(role="system", content=system_prompt),
-        LLMMessage(role="user", content=user_message),
-    ]
-
-
-def _sources_event(retrieved: list[RetrievedChunk]) -> StreamEvent:
-    return StreamEvent(
-        "sources",
-        {
-            "items": [
-                {
-                    "chunk_id": r.chunk_id,
-                    "source_id": r.source_id,
-                    "name": r.source_name,
-                    "ordinal": r.ordinal,
-                    "score": round(r.score, 6),
-                    "matched_by": list(r.matched_by) or [r.retriever],
-                }
-                for r in retrieved
             ]
         },
     )
@@ -295,6 +152,22 @@ async def _record_usage(
     )
 
 
+async def _dag_for_bot(db: AsyncSession, bot: Bot) -> DagSpec:
+    """The bot's pipeline, or the built-in default when it has none."""
+    if bot.pipeline_id is None:
+        return DEFAULT_DAG
+    pipeline = await db.scalar(select(Pipeline).where(Pipeline.id == bot.pipeline_id))
+    if pipeline is None or pipeline.current_version_id is None:
+        logger.warning("chat.pipeline_missing", bot_id=bot.id, pipeline_id=bot.pipeline_id)
+        return DEFAULT_DAG
+    version = await db.scalar(
+        select(PipelineVersion).where(PipelineVersion.id == pipeline.current_version_id)
+    )
+    if version is None:
+        return DEFAULT_DAG
+    return DagSpec.model_validate(version.dag)
+
+
 async def stream_rag(
     db: AsyncSession,
     *,
@@ -304,9 +177,10 @@ async def stream_rag(
     conversation_id: int | None,
     user_message: str,
 ) -> AsyncIterator[StreamEvent]:
-    """Run one RAG turn, yielding protocol events as they happen."""
+    """Run one turn, yielding protocol events as they happen."""
     bot, version = await _load_bot(db, org_id=org_id, bot_id=bot_id)
     source_ids = await _bot_source_ids(db, bot_id=bot.id)
+    dag = await _dag_for_bot(db, bot)
 
     turn = start_turn(
         "rag.turn",
@@ -316,6 +190,7 @@ async def stream_rag(
             "provider": version.llm_provider,
             "model": version.llm_model,
             "sources": len(source_ids),
+            "pipeline_id": bot.pipeline_id or 0,
         },
     )
 
@@ -326,79 +201,30 @@ async def stream_rag(
     await db.flush()
     yield StreamEvent("conversation", {"id": conv.id})
 
-    retrieval_step = turn.step("retrieval", kind="retriever", input_data=user_message)
-    retrieved = await _retrieve(
-        db, org_id=org_id, source_ids=source_ids, query=user_message, k=version.num_k
-    )
-    retrieval_step.end(
-        output=[{"name": r.source_name, "ordinal": r.ordinal, "score": r.score} for r in retrieved],
-        chunks=len(retrieved),
-    )
-    if retrieved:
-        yield _sources_event(retrieved)
-
-    context_parts, used_chunks = _assemble_context(retrieved)
-    messages = _build_messages(
-        version=version, context_parts=context_parts, user_message=user_message
-    )
-
-    llm: LLMProvider = await get_llm_provider(db, org_id=org_id, provider=version.llm_provider)
-    generation = turn.step(
-        "generation",
-        kind="generation",
-        input_data=[{"role": m.role, "content": m.content} for m in messages],
-        model=version.llm_model,
-        metadata={"provider": version.llm_provider, "temperature": version.temperature},
-    )
+    state = PipelineState(query=user_message, source_ids=source_ids)
+    ctx = NodeContext(db=db, org_id=org_id, bot=bot, version=version, trace=turn)
+    report = RunReport()
     started = time.perf_counter()
-    parts: list[str] = []
-    tokens_in = tokens_out = 0
 
-    try:
-        async for chunk in llm.complete(
-            messages,
-            model=version.llm_model,
-            temperature=version.temperature,
-            stream=True,
-        ):
-            if chunk.delta:
-                parts.append(chunk.delta)
-                yield StreamEvent("token", {"delta": chunk.delta})
-            if chunk.tokens_in is not None:
-                tokens_in = chunk.tokens_in
-            if chunk.tokens_out is not None:
-                tokens_out = chunk.tokens_out
-    except Exception as exc:
-        llm_errors_total.labels(provider=version.llm_provider, model=version.llm_model).inc()
-        generation.end(level="ERROR", status_message=str(exc)[:500])
+    async for event in execute(dag, state, ctx, report=report):
+        yield event
+
+    if state.failed:
         turn.end(level="ERROR")
-        logger.exception("rag.llm_failed")
-        yield StreamEvent("error", {"message": str(exc)})
         return
 
-    latency_ms = int((time.perf_counter() - started) * 1000)
-    answer = "".join(parts)
-    cost = llm.estimate_cost(version.llm_model, tokens_in=tokens_in, tokens_out=tokens_out)
-    record_llm_call(
-        provider=version.llm_provider,
-        model=version.llm_model,
-        duration_seconds=latency_ms / 1000,
-        tokens_in=tokens_in,
-        tokens_out=tokens_out,
-        cost_usd=float(cost) if cost is not None else None,
-    )
+    total_ms = int((time.perf_counter() - started) * 1000)
 
     # Which passages the answer leaned on, as opposed to which were retrieved
-    cited_markers = parse_citations(answer, used_chunks)
-    for entry in used_chunks:
+    cited_markers = parse_citations(state.answer, state.context_chunks)
+    for entry in state.context_chunks:
         entry["cited"] = entry["marker"] in cited_markers
-    cited = [c for c in used_chunks if c["cited"]]
-    generation.end(
-        output=answer,
-        usage_details={"input": tokens_in, "output": tokens_out},
-        cost_details={"total": float(cost)} if cost is not None else None,
+    cited = [c for c in state.context_chunks if c["cited"]]
+
+    turn.end(
+        output={"citations": len(cited), "chunks_in_context": len(state.context_chunks)},
+        nodes=len(report.timings),
     )
-    turn.end(output={"citations": len(cited), "chunks_in_context": len(used_chunks)})
     if cited:
         yield _citations_event(cited)
 
@@ -406,12 +232,12 @@ async def stream_rag(
         Message(
             conversation_id=conv.id,
             role="assistant",
-            content=answer,
-            sources=used_chunks or None,
-            tokens_in=tokens_in,
-            tokens_out=tokens_out,
-            cost_usd=cost,
-            latency_ms=latency_ms,
+            content=state.answer,
+            sources=state.context_chunks or None,
+            tokens_in=state.tokens_in,
+            tokens_out=state.tokens_out,
+            cost_usd=state.cost_usd,
+            latency_ms=state.latency_ms,
         )
     )
     conv.updated_at = datetime.now(UTC)
@@ -421,18 +247,20 @@ async def stream_rag(
         bot_id=bot.id,
         conversation_id=conv.id,
         version=version,
-        tokens_in=tokens_in,
-        tokens_out=tokens_out,
-        cost=cost,
+        tokens_in=state.tokens_in,
+        tokens_out=state.tokens_out,
+        cost=state.cost_usd,
     )
 
     yield StreamEvent(
         "done",
         {
-            "tokens_in": tokens_in,
-            "tokens_out": tokens_out,
-            "cost_usd": str(cost) if cost is not None else None,
-            "latency_ms": latency_ms,
+            "tokens_in": state.tokens_in,
+            "tokens_out": state.tokens_out,
+            "cost_usd": str(state.cost_usd) if state.cost_usd is not None else None,
+            "latency_ms": state.latency_ms,
+            "pipeline_ms": total_ms,
+            "nodes": report.as_dict(),
             # Present only when Langfuse is configured: a link to this exact turn
             "trace_url": turn.trace_url,
         },

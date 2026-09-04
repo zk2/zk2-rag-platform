@@ -40,6 +40,10 @@ class Bot(Base):
     current_version_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("bot_versions.id", ondelete="SET NULL")
     )
+    # None means the built-in default pipeline
+    pipeline_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("pipelines.id", ondelete="SET NULL")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

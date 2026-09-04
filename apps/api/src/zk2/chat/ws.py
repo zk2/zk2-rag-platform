@@ -39,7 +39,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from zk2.auth.models import Membership, User
 from zk2.bots.models import Bot
-from zk2.chat.rag import StreamEvent, stream_rag
+from zk2.chat.events import StreamEvent
+from zk2.chat.rag import stream_rag
 from zk2.config import get_settings
 from zk2.core.db import get_sessionmaker
 from zk2.core.metrics import active_websockets
