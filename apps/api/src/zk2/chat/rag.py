@@ -18,6 +18,7 @@ from zk2.auth.models import User
 from zk2.bots.models import Bot, BotSource, BotVersion, Conversation, Message
 from zk2.config import get_settings
 from zk2.core.errors import NotFoundError, ValidationError
+from zk2.core.metrics import llm_errors_total, record_llm_call, record_retrieval
 from zk2.llm.base import LLMProvider
 from zk2.llm.base import Message as LLMMessage
 from zk2.llm.registry import get_embedding_provider, get_llm_provider
@@ -107,7 +108,12 @@ async def _retrieve(
     candidates = max(k * CANDIDATE_MULTIPLIER, MIN_CANDIDATES)
 
     emb = await get_embedding_provider(db, org_id=org_id)
+
+    started = time.perf_counter()
     query_embedding = await emb.embed_query(query)
+    record_retrieval("embed_query", duration_seconds=time.perf_counter() - started, results=1)
+
+    started = time.perf_counter()
     dense_hits = await dense_search(
         db,
         org_id=org_id,
@@ -116,9 +122,18 @@ async def _retrieve(
         embedding_model=emb.model,
         k=candidates,
     )
+    record_retrieval(
+        "dense", duration_seconds=time.perf_counter() - started, results=len(dense_hits)
+    )
+
+    started = time.perf_counter()
     lexical_hits = await bm25_search(
         db, org_id=org_id, source_ids=source_ids, query=query, k=candidates
     )
+    record_retrieval(
+        "bm25", duration_seconds=time.perf_counter() - started, results=len(lexical_hits)
+    )
+
     fused = reciprocal_rank_fusion(
         [dense_hits, lexical_hits], limit=get_settings().retrieval.rerank_candidates
     )
@@ -131,7 +146,12 @@ async def _retrieve(
     )
     # Reranking reads query and passage together, so it only runs on the short
     # fused list. Disabled or unavailable, the fused order stands.
-    return await rerank(query, fused, top_k=k)
+    started = time.perf_counter()
+    reranked = await rerank(query, fused, top_k=k)
+    record_retrieval(
+        "rerank", duration_seconds=time.perf_counter() - started, results=len(reranked)
+    )
+    return reranked
 
 
 def _assemble_context(retrieved: list[RetrievedChunk]) -> tuple[list[str], list[dict[str, Any]]]:
@@ -325,6 +345,7 @@ async def stream_rag(
             if chunk.tokens_out is not None:
                 tokens_out = chunk.tokens_out
     except Exception as exc:
+        llm_errors_total.labels(provider=version.llm_provider, model=version.llm_model).inc()
         logger.exception("rag.llm_failed")
         yield StreamEvent("error", {"message": str(exc)})
         return
@@ -332,6 +353,14 @@ async def stream_rag(
     latency_ms = int((time.perf_counter() - started) * 1000)
     answer = "".join(parts)
     cost = llm.estimate_cost(version.llm_model, tokens_in=tokens_in, tokens_out=tokens_out)
+    record_llm_call(
+        provider=version.llm_provider,
+        model=version.llm_model,
+        duration_seconds=latency_ms / 1000,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        cost_usd=float(cost) if cost is not None else None,
+    )
 
     # Which passages the answer leaned on, as opposed to which were retrieved
     cited_markers = parse_citations(answer, used_chunks)

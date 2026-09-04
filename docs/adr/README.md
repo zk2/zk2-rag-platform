@@ -15,3 +15,4 @@ and the alternatives that were actually considered.
 | [0007](0007-encrypted-provider-keys.md) | Provider API keys encrypted with Fernet in the database | Accepted |
 | [0008](0008-arq-over-celery.md) | Arq for background jobs instead of Celery | Accepted |
 | [0009](0009-process-singletons.md) | Lazily initialised process-wide resource singletons | Accepted |
+| [0010](0010-metric-cardinality.md) | Metric labels exclude tenant identity | Accepted |

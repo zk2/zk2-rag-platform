@@ -126,6 +126,14 @@ class ObservabilitySettings(_Base):
     otel_endpoint: str | None = Field(None, alias="OTEL_EXPORTER_OTLP_ENDPOINT")
     otel_service_name: str = Field("zk2-api", alias="OTEL_SERVICE_NAME")
     sentry_dsn: str | None = Field(None, alias="SENTRY_DSN")
+    # /metrics is for a Prometheus scrape. Unauthenticated is fine inside a
+    # cluster; set METRICS_TOKEN when the endpoint is reachable from outside.
+    metrics_enabled: bool = Field(True, alias="METRICS_ENABLED")
+    metrics_token: SecretStr | None = Field(None, alias="METRICS_TOKEN")
+    # Shown in the UI so operators can jump to the right tool
+    grafana_url: str | None = Field(None, alias="GRAFANA_URL")
+    jaeger_url: str | None = Field(None, alias="JAEGER_URL")
+    prometheus_url: str | None = Field(None, alias="PROMETHEUS_URL")
 
 
 class IngestSettings(_Base):

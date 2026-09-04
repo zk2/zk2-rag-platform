@@ -22,11 +22,13 @@ from zk2.core.arq import close_arq
 from zk2.core.db import dispose_engine, get_engine
 from zk2.core.errors import register_exception_handlers
 from zk2.core.logging import configure_logging
+from zk2.core.metrics_middleware import metrics_middleware
 from zk2.core.redis_client import close_redis
 from zk2.core.telemetry import instrument_sqlalchemy_engine, setup_telemetry
 from zk2.health import router as health_router
 from zk2.llm.router import models_router
 from zk2.llm.router import router as providers_router
+from zk2.observability.router import router as observability_router
 from zk2.orgs.router import router as org_settings_router
 from zk2.sources.router import router as sources_router
 
@@ -68,10 +70,13 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    app.middleware("http")(metrics_middleware)
+
     register_exception_handlers(app)
     setup_telemetry(app)
 
     app.include_router(health_router)
+    app.include_router(observability_router)
     app.include_router(auth_router)
     app.include_router(access_router)
     app.include_router(admin_router)

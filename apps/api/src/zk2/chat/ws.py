@@ -42,6 +42,7 @@ from zk2.bots.models import Bot
 from zk2.chat.rag import StreamEvent, stream_rag
 from zk2.config import get_settings
 from zk2.core.db import get_sessionmaker
+from zk2.core.metrics import active_websockets
 from zk2.core.security import decode_access_token
 
 
@@ -59,10 +60,13 @@ router = APIRouter(tags=["chat"])
 @router.websocket("/ws/chat/{bot_id}")
 async def chat_ws(ws: WebSocket, bot_id: int) -> None:
     await ws.accept()
+    active_websockets.inc()
     try:
         await _run(ws, bot_id)
     except WebSocketDisconnect:
         return
+    finally:
+        active_websockets.dec()
 
 
 async def _send(ws: WebSocket, kind: str, **payload: object) -> None:

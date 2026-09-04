@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -9,6 +10,7 @@ import structlog
 from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from zk2.core.metrics import ingest_chunks_total, ingest_documents_total, ingest_duration_seconds
 from zk2.core.storage import get_storage
 from zk2.llm.registry import get_embedding_provider
 from zk2.sources.chunking import chunk_document
@@ -39,6 +41,7 @@ async def ingest_source(db: AsyncSession, *, source_id: int) -> None:
     source.error = None
     source.updated_at = datetime.now(UTC)
     await db.flush()
+    started = time.perf_counter()
 
     try:
         text_content = await _extract(source)
@@ -103,6 +106,9 @@ async def ingest_source(db: AsyncSession, *, source_id: int) -> None:
 
         source.status = SourceStatus.READY
         source.updated_at = datetime.now(UTC)
+        ingest_documents_total.labels(status="ready").inc()
+        ingest_chunks_total.inc(len(chunk_rows))
+        ingest_duration_seconds.observe(time.perf_counter() - started)
         meta: dict[str, Any] = dict(source.meta or {})
         meta["chunks"] = len(chunk_rows)
         meta["lang"] = source.lang
@@ -119,6 +125,8 @@ async def ingest_source(db: AsyncSession, *, source_id: int) -> None:
         source.status = SourceStatus.FAILED
         source.error = str(exc)[:1900]
         source.updated_at = datetime.now(UTC)
+        ingest_documents_total.labels(status="failed").inc()
+        ingest_duration_seconds.observe(time.perf_counter() - started)
         logger.exception("ingest.failed", source_id=source_id)
 
 
