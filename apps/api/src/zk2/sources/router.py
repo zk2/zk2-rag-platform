@@ -33,6 +33,7 @@ from zk2.sources.service import (
     delete_source,
     get_tree,
     import_sitemap,
+    reindex_source,
 )
 from zk2.sources.web import discover_sitemap
 
@@ -148,6 +149,18 @@ async def preview_sitemap_endpoint(
         would_import=min(len(urls), payload.limit),
         urls=urls[:20],
     )
+
+
+@router.post("/{source_id}/reindex", response_model=SourceDto)
+async def reindex_source_endpoint(
+    source_id: int,
+    ctx: Annotated[OrgContext, Depends(require_org("editor"))],
+    db: Annotated[AsyncSession, Depends(get_db_dep)],
+    arq: Annotated[ArqRedis, Depends(get_arq_dep)],
+) -> SourceDto:
+    """Re-run ingest for one source: new chunking, new embeddings, new tsvector."""
+    row = await reindex_source(db, arq, org_id=ctx.org_id, source_id=source_id)
+    return SourceDto.model_validate(row)
 
 
 @router.get("/tree", response_model=list[SourceNodeDto])

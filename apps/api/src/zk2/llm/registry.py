@@ -87,9 +87,22 @@ async def get_embedding_provider(
     db: AsyncSession,
     *,
     org_id: int,
-    provider: str = "openai",
-    model: str = "text-embedding-3-small",
+    provider: str | None = None,
+    model: str | None = None,
 ) -> EmbeddingProvider:
+    """Embedding provider for an organization.
+
+    Provider and model come from the organization's settings unless the caller
+    overrides them - the ingest path and the query path must agree, and a
+    constant in the code is how they stopped agreeing before.
+    """
+    from zk2.orgs.service import get_org_settings  # noqa: PLC0415  (cycle: orgs -> llm)
+
+    if provider is None or model is None:
+        settings = await get_org_settings(db, org_id=org_id)
+        provider = provider or settings.embedding_provider
+        model = model or settings.embedding_model
+
     if provider == "openai":
         return OpenAIEmbeddings(api_key=await _require_key(db, org_id, "openai"), model=model)
     msg = f"Embedding provider {provider!r} not yet supported"

@@ -78,7 +78,7 @@ async def create_file_source(
     await db.flush()
     row.path = await _resolve_path(db, org_id=org_id, parent_id=parent_id, child_id=row.id)
     await db.flush()
-    await _enqueue_ingest(arq, db, row.id)
+    await enqueue_ingest(arq, db, row.id)
     return row
 
 
@@ -105,7 +105,7 @@ async def create_url_source(
     await db.flush()
     row.path = await _resolve_path(db, org_id=org_id, parent_id=parent_id, child_id=row.id)
     await db.flush()
-    await _enqueue_ingest(arq, db, row.id)
+    await enqueue_ingest(arq, db, row.id)
     return row
 
 
@@ -127,6 +127,22 @@ async def import_sitemap(
             await create_url_source(db, arq, org_id=org_id, parent_id=parent_id, url=url)
         )
     return created
+
+
+async def reindex_source(
+    db: AsyncSession, arq: ArqRedis | None, *, org_id: int, source_id: int
+) -> Source:
+    """Queue a single source for re-ingestion."""
+    source = await db.scalar(select(Source).where(Source.id == source_id, Source.org_id == org_id))
+    if source is None:
+        raise NotFoundError("Source not found")
+    if source.type == SourceType.DIRECTORY.value:
+        raise ValidationError("A directory has nothing to index; reindex its documents")
+    source.status = SourceStatus.PENDING.value
+    source.error = None
+    await db.flush()
+    await enqueue_ingest(arq, db, source.id)
+    return source
 
 
 async def delete_source(db: AsyncSession, *, org_id: int, source_id: int) -> int:
@@ -211,7 +227,7 @@ def _build_tree(rows: Sequence[Row[Any]]) -> list[TreeNode]:
     return roots
 
 
-async def _enqueue_ingest(arq: ArqRedis | None, db: AsyncSession, source_id: int) -> None:
+async def enqueue_ingest(arq: ArqRedis | None, db: AsyncSession, source_id: int) -> None:
     """Enqueue Arq job; if arq is unavailable, run inline (useful for tests)."""
     if arq is not None:
         await arq.enqueue_job("ingest_source", source_id)

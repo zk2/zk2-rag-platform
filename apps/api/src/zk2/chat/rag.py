@@ -27,7 +27,6 @@ from zk2.sources.chunking import count_tokens
 
 logger = structlog.get_logger()
 
-DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
 CONTEXT_TOKEN_BUDGET = 6000  # rough; leaves room for system prompt + answer
 # Each retriever returns more than the final k so fusion has something to fuse
 CANDIDATE_MULTIPLIER = 4
@@ -102,7 +101,7 @@ async def _retrieve(
         return []
     candidates = max(k * CANDIDATE_MULTIPLIER, MIN_CANDIDATES)
 
-    emb = await get_embedding_provider(db, org_id=org_id, model=DEFAULT_EMBEDDING_MODEL)
+    emb = await get_embedding_provider(db, org_id=org_id)
     query_embedding = await emb.embed_query(query)
     dense_hits = await dense_search(
         db,
