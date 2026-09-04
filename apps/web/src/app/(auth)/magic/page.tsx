@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +8,20 @@ import { Label } from "@/components/ui/label";
 import { api, ApiError } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth-store";
 
+/**
+ * useSearchParams opts a page out of static rendering, and Next requires the
+ * bailout to be explicit: without a Suspense boundary the production build
+ * fails on this page. The wrapper is that boundary.
+ */
 export default function MagicLinkPage() {
+  return (
+    <Suspense fallback={<p className="text-sm text-slate-500">Loading…</p>}>
+      <MagicLinkForm />
+    </Suspense>
+  );
+}
+
+function MagicLinkForm() {
   const router = useRouter();
   const params = useSearchParams();
   const token = params.get("token");

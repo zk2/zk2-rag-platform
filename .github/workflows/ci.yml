@@ -69,6 +69,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter web lint
       - run: pnpm --filter web typecheck
+      # A production build catches what lint and tsc cannot: missing Suspense
+      # boundaries, SSR-unsafe code, and packages that break at build time
+      - run: pnpm --filter web build
 
   web-test:
     name: Web — vitest

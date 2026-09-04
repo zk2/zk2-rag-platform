@@ -13,11 +13,13 @@ import {
   ChevronsUpDown,
   Shield,
   Activity,
+  GitBranch,
 } from "lucide-react";
 
 const NAV = [
   { href: "/sources", label: "Sources", icon: FolderTree },
   { href: "/bots", label: "Bots", icon: Bot },
+  { href: "/pipelines", label: "Pipelines", icon: GitBranch },
   { href: "/observability", label: "Observability", icon: Activity },
   { href: "/settings/providers", label: "Settings", icon: SettingsIcon },
 ];
