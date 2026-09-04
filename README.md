@@ -49,6 +49,17 @@ make dev-api          # run API (terminal 1) — http://localhost:8000
 make dev-web          # run web (terminal 2) — http://localhost:3000
 ```
 
+Observability is wired for local use: metrics at
+<http://localhost:8000/metrics>, Grafana with a provisioned dashboard at
+<http://localhost:3001>, traces in Jaeger at <http://localhost:16686>, LLM
+traces in Langfuse at <http://localhost:3030>. Prometheus runs in Docker and
+reaches the host through `host-gateway`, so start the API with
+`make dev-api API_HOST=0.0.0.0` when you want it scraped - the default binds to
+loopback only. If the Prometheus target still shows down, the host firewall is
+blocking the Docker bridge: on a stock Debian/nftables host, containers cannot
+open connections back to host ports until a rule allows it. Everything else in
+the stack works regardless; only the scrape needs that hole.
+
 Open <http://localhost:3000>, sign in as super-admin from `.env`.
 Outgoing emails are caught by MailHog at <http://localhost:8025>.
 

@@ -24,6 +24,7 @@ from zk2.core.errors import register_exception_handlers
 from zk2.core.logging import configure_logging
 from zk2.core.metrics_middleware import metrics_middleware
 from zk2.core.redis_client import close_redis
+from zk2.core.request_context import request_context_middleware
 from zk2.core.telemetry import instrument_sqlalchemy_engine, setup_telemetry
 from zk2.core.tracing import flush_traces
 from zk2.health import router as health_router
@@ -72,7 +73,10 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Registered last runs first: request context wraps the metrics middleware,
+    # so a metric emitted during the request already has the log context bound.
     app.middleware("http")(metrics_middleware)
+    app.middleware("http")(request_context_middleware)
 
     register_exception_handlers(app)
     setup_telemetry(app)

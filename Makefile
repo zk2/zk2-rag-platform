@@ -46,9 +46,14 @@ dev: up ## Start full dev stack (infra + api + web)
 	@echo "  make dev-api"
 	@echo "  make dev-web"
 
+# Loopback by default: a dev server should not be on the LAN. Prometheus runs
+# in Docker and reaches the host through host-gateway, so scraping needs
+# `make dev-api API_HOST=0.0.0.0`.
+API_HOST ?= 127.0.0.1
+
 .PHONY: dev-api
-dev-api: ## Run API with hot reload
-	cd $(API_DIR) && uv run uvicorn zk2.main:app --reload --port 8000
+dev-api: ## Run API with hot reload (API_HOST=0.0.0.0 to let Prometheus scrape it)
+	cd $(API_DIR) && uv run uvicorn zk2.main:app --reload --port 8000 --host $(API_HOST)
 
 .PHONY: dev-web
 dev-web: ## Run web with hot reload
