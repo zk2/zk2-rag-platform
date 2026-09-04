@@ -144,6 +144,15 @@ class IngestSettings(_Base):
     embedding_dimensions: int = Field(1536, alias="EMBEDDING_DIMENSIONS", le=2000)
 
 
+class RetrievalSettings(_Base):
+    """Hybrid retrieval and reranking."""
+
+    # Cross-encoder reranking needs the `rerank` extra (sentence-transformers + torch)
+    rerank_enabled: bool = Field(False, alias="RERANK_ENABLED")
+    rerank_model: str = Field("BAAI/bge-reranker-v2-m3", alias="RERANK_MODEL")
+    rerank_candidates: int = Field(30, alias="RERANK_CANDIDATES")
+
+
 class ChatSettings(_Base):
     max_ws_message_bytes: int = Field(32_768, alias="MAX_WS_MESSAGE_BYTES")
     ws_idle_timeout_seconds: float = Field(900.0, alias="WS_IDLE_TIMEOUT_SECONDS")
@@ -177,6 +186,7 @@ class Settings:
         self.llm = LLMSettings()
         self.observability = ObservabilitySettings()
         self.ingest = IngestSettings()
+        self.retrieval = RetrievalSettings()
         self.chat = ChatSettings()
         self.storage = StorageSettings()
         self.super_admin = SuperAdminSeedSettings()

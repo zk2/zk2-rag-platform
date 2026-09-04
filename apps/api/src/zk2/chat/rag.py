@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from zk2.auth.models import User
 from zk2.bots.models import Bot, BotSource, BotVersion, Conversation, Message
+from zk2.config import get_settings
 from zk2.core.errors import NotFoundError, ValidationError
 from zk2.llm.base import LLMProvider
 from zk2.llm.base import Message as LLMMessage
@@ -23,6 +24,7 @@ from zk2.retrieval.base import RetrievedChunk
 from zk2.retrieval.bm25 import bm25_search
 from zk2.retrieval.dense import dense_search
 from zk2.retrieval.fusion import reciprocal_rank_fusion
+from zk2.retrieval.rerank import rerank
 from zk2.sources.chunking import count_tokens
 
 logger = structlog.get_logger()
@@ -114,10 +116,19 @@ async def _retrieve(
     lexical_hits = await bm25_search(
         db, org_id=org_id, source_ids=source_ids, query=query, k=candidates
     )
-    logger.debug(
-        "rag.retrieved", dense=len(dense_hits), bm25=len(lexical_hits), candidates=candidates
+    fused = reciprocal_rank_fusion(
+        [dense_hits, lexical_hits], limit=get_settings().retrieval.rerank_candidates
     )
-    return reciprocal_rank_fusion([dense_hits, lexical_hits], limit=k)
+    logger.debug(
+        "rag.retrieved",
+        dense=len(dense_hits),
+        bm25=len(lexical_hits),
+        fused=len(fused),
+        candidates=candidates,
+    )
+    # Reranking reads query and passage together, so it only runs on the short
+    # fused list. Disabled or unavailable, the fused order stands.
+    return await rerank(query, fused, top_k=k)
 
 
 def _assemble_context(retrieved: list[RetrievedChunk]) -> tuple[list[str], list[dict[str, Any]]]:

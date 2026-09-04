@@ -66,6 +66,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Local cross-encoder reranking. Pulls in torch, so it is opt-in: the chat path
+# runs without it and simply keeps the fused order.
+rerank = [
+    "sentence-transformers>=3.3.0",
+]
 dev = [
     "ruff>=0.7.0",
     "mypy>=1.13.0",
@@ -134,6 +139,8 @@ ignore = [
 "src/zk2/core/redis_client.py" = ["PLW0603"]
 "src/zk2/core/arq.py" = ["PLW0603"]
 "src/zk2/core/storage.py" = ["PLW0603"]
+# The reranker model is loaded once per process, same pattern (ADR-0009)
+"src/zk2/retrieval/rerank.py" = ["PLW0603"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -155,6 +162,7 @@ module = [
     "pymupdf.*",
     "docx.*",
     "openpyxl.*",
+    "sentence_transformers.*",
 ]
 ignore_missing_imports = true
 
