@@ -61,6 +61,9 @@ services:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
     ports:
       - "9090:9090"
+    # The API runs on the host during development, not in this network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - jaeger
 
@@ -73,8 +76,47 @@ services:
       - "3001:3000"
     volumes:
       - grafana_data:/var/lib/grafana
+      # Datasource and dashboards are provisioned from the repository, so a
+      # fresh volume comes up with the same dashboards as everyone else's
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+
+  # LLM tracing: prompts, retrieved passages, tokens and cost per turn.
+  # Its own database - keeping it out of the application's schema means it can
+  # be dropped or upgraded without touching application data.
+  langfuse-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: langfuse
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: langfuse
+    volumes:
+      - langfuse_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  langfuse:
+    image: langfuse/langfuse:2
+    environment:
+      DATABASE_URL: postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+      NEXTAUTH_URL: http://localhost:3030
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-dev-only-change-me}
+      SALT: ${LANGFUSE_SALT:-dev-only-change-me}
+      TELEMETRY_ENABLED: "false"
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+    ports:
+      - "3030:3000"
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
 
 volumes:
   postgres_data:
   redis_data:
   grafana_data:
+  langfuse_data:

@@ -12,11 +12,13 @@ import {
   LogOut,
   ChevronsUpDown,
   Shield,
+  Activity,
 } from "lucide-react";
 
 const NAV = [
   { href: "/sources", label: "Sources", icon: FolderTree },
   { href: "/bots", label: "Bots", icon: Bot },
+  { href: "/observability", label: "Observability", icon: Activity },
   { href: "/settings/providers", label: "Settings", icon: SettingsIcon },
 ];
 

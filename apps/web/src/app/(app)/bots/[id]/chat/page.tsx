@@ -20,7 +20,13 @@ type Msg = {
     // Set once the answer is complete: did the model actually cite this passage
     cited?: boolean;
   }>;
-  usage?: { tokens_in: number; tokens_out: number; cost_usd: string; latency_ms: number };
+  usage?: {
+    tokens_in: number;
+    tokens_out: number;
+    cost_usd: string | null;
+    latency_ms: number;
+    trace_url?: string | null;
+  };
 };
 
 export default function ChatPage({ params }: { params: Promise<{ id: string }> }) {
@@ -247,8 +253,22 @@ function MessageBubble({ msg }: { msg: Msg }) {
       )}
       {msg.usage && (
         <div className="mt-1 text-[10px] text-slate-400">
-          {msg.usage.tokens_in}+{msg.usage.tokens_out} tok · ${msg.usage.cost_usd} ·{" "}
+          {msg.usage.tokens_in}+{msg.usage.tokens_out} tok ·{" "}
+          {msg.usage.cost_usd ? `$${msg.usage.cost_usd}` : "cost unknown"} ·{" "}
           {msg.usage.latency_ms} ms
+          {msg.usage.trace_url && (
+            <>
+              {" · "}
+              <a
+                href={msg.usage.trace_url}
+                target="_blank"
+                rel="noreferrer"
+                className="underline hover:text-slate-600"
+              >
+                trace
+              </a>
+            </>
+          )}
         </div>
       )}
     </div>

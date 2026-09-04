@@ -25,6 +25,7 @@ from zk2.core.logging import configure_logging
 from zk2.core.metrics_middleware import metrics_middleware
 from zk2.core.redis_client import close_redis
 from zk2.core.telemetry import instrument_sqlalchemy_engine, setup_telemetry
+from zk2.core.tracing import flush_traces
 from zk2.health import router as health_router
 from zk2.llm.router import models_router
 from zk2.llm.router import router as providers_router
@@ -41,6 +42,7 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        await flush_traces()
         await dispose_engine()
         await close_redis()
         await close_arq()

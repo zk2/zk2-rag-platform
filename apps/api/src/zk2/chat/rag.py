@@ -19,6 +19,7 @@ from zk2.bots.models import Bot, BotSource, BotVersion, Conversation, Message
 from zk2.config import get_settings
 from zk2.core.errors import NotFoundError, ValidationError
 from zk2.core.metrics import llm_errors_total, record_llm_call, record_retrieval
+from zk2.core.tracing import start_turn
 from zk2.llm.base import LLMProvider
 from zk2.llm.base import Message as LLMMessage
 from zk2.llm.registry import get_embedding_provider, get_llm_provider
@@ -307,6 +308,17 @@ async def stream_rag(
     bot, version = await _load_bot(db, org_id=org_id, bot_id=bot_id)
     source_ids = await _bot_source_ids(db, bot_id=bot.id)
 
+    turn = start_turn(
+        "rag.turn",
+        metadata={
+            "org_id": org_id,
+            "bot_id": bot.id,
+            "provider": version.llm_provider,
+            "model": version.llm_model,
+            "sources": len(source_ids),
+        },
+    )
+
     conv = await _resolve_conversation(
         db, bot=bot, user=user, conversation_id=conversation_id, first_message=user_message
     )
@@ -314,8 +326,13 @@ async def stream_rag(
     await db.flush()
     yield StreamEvent("conversation", {"id": conv.id})
 
+    retrieval_step = turn.step("retrieval", kind="retriever", input_data=user_message)
     retrieved = await _retrieve(
         db, org_id=org_id, source_ids=source_ids, query=user_message, k=version.num_k
+    )
+    retrieval_step.end(
+        output=[{"name": r.source_name, "ordinal": r.ordinal, "score": r.score} for r in retrieved],
+        chunks=len(retrieved),
     )
     if retrieved:
         yield _sources_event(retrieved)
@@ -326,6 +343,13 @@ async def stream_rag(
     )
 
     llm: LLMProvider = await get_llm_provider(db, org_id=org_id, provider=version.llm_provider)
+    generation = turn.step(
+        "generation",
+        kind="generation",
+        input_data=[{"role": m.role, "content": m.content} for m in messages],
+        model=version.llm_model,
+        metadata={"provider": version.llm_provider, "temperature": version.temperature},
+    )
     started = time.perf_counter()
     parts: list[str] = []
     tokens_in = tokens_out = 0
@@ -346,6 +370,8 @@ async def stream_rag(
                 tokens_out = chunk.tokens_out
     except Exception as exc:
         llm_errors_total.labels(provider=version.llm_provider, model=version.llm_model).inc()
+        generation.end(level="ERROR", status_message=str(exc)[:500])
+        turn.end(level="ERROR")
         logger.exception("rag.llm_failed")
         yield StreamEvent("error", {"message": str(exc)})
         return
@@ -367,6 +393,12 @@ async def stream_rag(
     for entry in used_chunks:
         entry["cited"] = entry["marker"] in cited_markers
     cited = [c for c in used_chunks if c["cited"]]
+    generation.end(
+        output=answer,
+        usage_details={"input": tokens_in, "output": tokens_out},
+        cost_details={"total": float(cost)} if cost is not None else None,
+    )
+    turn.end(output={"citations": len(cited), "chunks_in_context": len(used_chunks)})
     if cited:
         yield _citations_event(cited)
 
@@ -401,5 +433,7 @@ async def stream_rag(
             "tokens_out": tokens_out,
             "cost_usd": str(cost) if cost is not None else None,
             "latency_ms": latency_ms,
+            # Present only when Langfuse is configured: a link to this exact turn
+            "trace_url": turn.trace_url,
         },
     )

@@ -24,7 +24,8 @@ jobs:
         run: uv python install 3.12
       - name: Install deps
         working-directory: apps/api
-        run: uv sync --all-extras
+        # Not --all-extras: the rerank extra pulls torch, which CI does not need
+        run: uv sync --extra dev
       - name: Ruff
         working-directory: apps/api
         run: |
@@ -46,7 +47,7 @@ jobs:
       - run: uv python install 3.12
       - name: Install deps
         working-directory: apps/api
-        run: uv sync --all-extras
+        run: uv sync --extra dev
       - name: Run tests
         working-directory: apps/api
         env:
@@ -99,7 +100,7 @@ jobs:
       - run: uv python install 3.12
       - name: Install api deps
         working-directory: apps/api
-        run: uv sync --all-extras
+        run: uv sync --extra dev
       - name: Bandit
         working-directory: apps/api
         run: uv run bandit -r src -ll

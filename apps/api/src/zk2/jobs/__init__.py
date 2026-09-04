@@ -11,6 +11,7 @@ from arq.connections import RedisSettings
 from zk2.config import get_settings
 from zk2.core.db import db_session, dispose_engine
 from zk2.core.logging import configure_logging
+from zk2.core.tracing import flush_traces
 from zk2.sources.ingest import ingest_source as _ingest_source
 
 logger = structlog.get_logger()
@@ -27,6 +28,7 @@ async def on_startup(_: dict[str, Any]) -> None:
 
 
 async def on_shutdown(_: dict[str, Any]) -> None:
+    await flush_traces()
     await dispose_engine()
     logger.info("arq.worker.stop")
 
