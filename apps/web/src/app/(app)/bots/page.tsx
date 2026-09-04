@@ -9,8 +9,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
+import { SourcePicker, type SourceNode } from "@/components/source-picker";
 import { formatPrice, useCatalog } from "@/lib/catalog";
-import { Trash2, MessageSquare } from "lucide-react";
+import { Trash2, MessageSquare, Settings } from "lucide-react";
 
 type Bot = {
   id: number;
@@ -21,14 +22,6 @@ type Bot = {
   temperature: number;
   num_k: number;
   source_ids: number[];
-};
-
-type SourceNode = {
-  id: number;
-  type: "directory" | "file" | "web";
-  name: string;
-  status: string;
-  children: SourceNode[];
 };
 
 export default function BotsPage() {
@@ -68,6 +61,11 @@ function BotsList() {
                 </div>
               </div>
               <div className="flex gap-2">
+                <Link href={`/bots/${b.id}/settings`}>
+                  <Button size="sm" variant="outline">
+                    <Settings className="size-4 mr-1" /> Settings
+                  </Button>
+                </Link>
                 <Link href={`/bots/${b.id}/chat`}>
                   <Button size="sm" variant="outline">
                     <MessageSquare className="size-4 mr-1" /> Chat
@@ -184,7 +182,6 @@ function CreateBotCard() {
                 onToggle={(id) =>
                   setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
                 }
-                depth={0}
               />
             ) : (
               <span className="text-slate-500">No sources yet</span>
@@ -203,46 +200,5 @@ function CreateBotCard() {
         )}
       </CardContent>
     </Card>
-  );
-}
-
-function SourcePicker({
-  nodes,
-  selected,
-  onToggle,
-  depth,
-}: {
-  nodes: SourceNode[];
-  selected: number[];
-  onToggle: (id: number) => void;
-  depth: number;
-}) {
-  return (
-    <>
-      {nodes.map((n) => (
-        <div key={n.id}>
-          <label
-            className="flex items-center gap-2 cursor-pointer hover:bg-slate-50 py-0.5 px-1 rounded"
-            style={{ paddingLeft: depth * 12 + 4 }}
-          >
-            <input
-              type="checkbox"
-              checked={selected.includes(n.id)}
-              onChange={() => onToggle(n.id)}
-            />
-            <span className={n.type === "directory" ? "font-medium" : ""}>{n.name}</span>
-            <span className="text-[10px] uppercase text-slate-400">{n.type}</span>
-          </label>
-          {n.children.length > 0 && (
-            <SourcePicker
-              nodes={n.children}
-              selected={selected}
-              onToggle={onToggle}
-              depth={depth + 1}
-            />
-          )}
-        </div>
-      ))}
-    </>
   );
 }

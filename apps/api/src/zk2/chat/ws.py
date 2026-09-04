@@ -9,7 +9,8 @@ Wire protocol (JSON messages):
   server → client:
     {"type": "ready", "expires_in": 870}
     {"type": "conversation", "id": 123}
-    {"type": "sources", "items": [...]}
+    {"type": "sources", "items": [...]}       # what retrieval considered
+    {"type": "citations", "items": [...]}     # what the answer actually used
     {"type": "token", "delta": "..."}
     {"type": "done", "tokens_in": ..., "tokens_out": ..., "cost_usd": "0.000123", "latency_ms": 1500}
     {"type": "error", "message": "..."}

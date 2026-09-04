@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -33,6 +34,8 @@ CONTEXT_TOKEN_BUDGET = 6000  # rough; leaves room for system prompt + answer
 # Each retriever returns more than the final k so fusion has something to fuse
 CANDIDATE_MULTIPLIER = 4
 MIN_CANDIDATES = 20
+# Markers the model is asked to cite: [1], [2][3], ...
+_CITATION_PATTERN = re.compile(r"\[(\d{1,2})\]")
 
 
 @dataclass(slots=True)
@@ -132,12 +135,18 @@ async def _retrieve(
 
 
 def _assemble_context(retrieved: list[RetrievedChunk]) -> tuple[list[str], list[dict[str, Any]]]:
-    """Pack retrieved chunks into the token budget, keeping their attribution."""
+    """Pack retrieved chunks into the token budget, numbered for citation.
+
+    The number is what makes attribution possible: the model is asked to cite
+    [1], [2] and so on, and those markers are matched back to chunks after the
+    answer is generated.
+    """
     context_parts: list[str] = []
     used_chunks: list[dict[str, Any]] = []
     used_tokens = 0
     for r in retrieved:
-        snippet = f"[doc:{r.source_name}#{r.ordinal}]\n{r.text}"
+        marker = len(used_chunks) + 1
+        snippet = f"[{marker}] source: {r.source_name} (chunk {r.ordinal})\n{r.text}"
         tokens = count_tokens(snippet)
         if used_tokens + tokens > CONTEXT_TOKEN_BUDGET:
             break
@@ -145,13 +154,48 @@ def _assemble_context(retrieved: list[RetrievedChunk]) -> tuple[list[str], list[
         context_parts.append(snippet)
         used_chunks.append(
             {
+                "marker": marker,
                 "chunk_id": r.chunk_id,
                 "source_id": r.source_id,
                 "name": r.source_name,
                 "ordinal": r.ordinal,
+                "cited": False,
             }
         )
     return context_parts, used_chunks
+
+
+def parse_citations(answer: str, context_chunks: list[dict[str, Any]]) -> list[int]:
+    """Markers the answer actually cited, in the order they first appear.
+
+    Anything outside the range of what was in the prompt is ignored - a model
+    that invents [7] when six passages were supplied has cited nothing.
+    """
+    valid = {chunk["marker"] for chunk in context_chunks}
+    seen: list[int] = []
+    for raw in _CITATION_PATTERN.findall(answer):
+        marker = int(raw)
+        if marker in valid and marker not in seen:
+            seen.append(marker)
+    return seen
+
+
+def _citations_event(cited: list[dict[str, Any]]) -> StreamEvent:
+    return StreamEvent(
+        "citations",
+        {
+            "items": [
+                {
+                    "chunk_id": c["chunk_id"],
+                    "source_id": c["source_id"],
+                    "name": c["name"],
+                    "ordinal": c["ordinal"],
+                    "marker": c["marker"],
+                }
+                for c in cited
+            ]
+        },
+    )
 
 
 def _build_messages(
@@ -160,8 +204,11 @@ def _build_messages(
     system_prompt = (version.system_prompt or "You are a helpful assistant.").strip()
     if context_parts:
         system_prompt += (
-            "\n\nUse only the following retrieved context to answer. "
-            "If the context does not contain the answer, say so honestly.\n\n"
+            "\n\nAnswer using only the numbered passages below. "
+            "If they do not contain the answer, say so honestly.\n"
+            "Cite the passages you actually used by their number in square "
+            "brackets, like [1] or [2][3], right after the statement they "
+            "support. Do not cite a passage you did not use.\n\n"
             "----- CONTEXT -----\n" + "\n\n".join(context_parts)
         )
     return [
@@ -283,13 +330,22 @@ async def stream_rag(
         return
 
     latency_ms = int((time.perf_counter() - started) * 1000)
+    answer = "".join(parts)
     cost = llm.estimate_cost(version.llm_model, tokens_in=tokens_in, tokens_out=tokens_out)
+
+    # Which passages the answer leaned on, as opposed to which were retrieved
+    cited_markers = parse_citations(answer, used_chunks)
+    for entry in used_chunks:
+        entry["cited"] = entry["marker"] in cited_markers
+    cited = [c for c in used_chunks if c["cited"]]
+    if cited:
+        yield _citations_event(cited)
 
     db.add(
         Message(
             conversation_id=conv.id,
             role="assistant",
-            content="".join(parts),
+            content=answer,
             sources=used_chunks or None,
             tokens_in=tokens_in,
             tokens_out=tokens_out,

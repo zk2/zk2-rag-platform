@@ -17,6 +17,8 @@ type Msg = {
     ordinal: number;
     score?: number;
     matched_by?: string[];
+    // Set once the answer is complete: did the model actually cite this passage
+    cited?: boolean;
   }>;
   usage?: { tokens_in: number; tokens_out: number; cost_usd: string; latency_ms: number };
 };
@@ -62,6 +64,24 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
             return [...m, { role: "assistant", content: "", sources: data.items }];
           });
           break;
+        case "citations": {
+          // The answer names the passages it used; mark those, dim the rest
+          const cited = new Set<number>(
+            (data.items as Array<{ chunk_id: number }>).map((i) => i.chunk_id),
+          );
+          setMessages((m) => {
+            const last = m[m.length - 1];
+            if (!last || last.role !== "assistant" || !last.sources) return m;
+            return [
+              ...m.slice(0, -1),
+              {
+                ...last,
+                sources: last.sources.map((s) => ({ ...s, cited: cited.has(s.chunk_id) })),
+              },
+            ];
+          });
+          break;
+        }
         case "token":
           setMessages((m) => {
             const last = m[m.length - 1];
@@ -201,20 +221,27 @@ function MessageBubble({ msg }: { msg: Msg }) {
             {msg.sources.map((s) => (
               <span
                 key={s.chunk_id}
-                className="text-[10px] bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded"
-                title={`score ${s.score?.toFixed(4) ?? "?"} · found by ${
-                  s.matched_by?.join(" + ") ?? "retrieval"
-                }`}
+                className={
+                  s.cited
+                    ? "text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-300 px-1.5 py-0.5 rounded font-medium"
+                    : "text-[10px] bg-slate-50 text-slate-500 border border-slate-200 px-1.5 py-0.5 rounded"
+                }
+                title={`${s.cited ? "cited in the answer" : "retrieved, not cited"} · score ${
+                  s.score?.toFixed(4) ?? "?"
+                } · found by ${s.matched_by?.join(" + ") ?? "retrieval"}`}
               >
                 {s.name}#{s.ordinal}
                 {s.matched_by && s.matched_by.length > 0 && (
-                  <span className="ml-1 text-amber-600">{s.matched_by.map(retrieverBadge).join("")}</span>
+                  <span className="ml-1 opacity-70">
+                    {s.matched_by.map(retrieverBadge).join("")}
+                  </span>
                 )}
               </span>
             ))}
           </div>
           <div className="text-[10px] text-slate-400">
-            V dense · T lexical · both means the retrievers agreed
+            Green = cited in the answer, grey = retrieved but unused · V dense, T lexical, R
+            reranked
           </div>
         </div>
       )}

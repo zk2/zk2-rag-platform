@@ -269,3 +269,133 @@ async def test_llm_failure_surfaces_as_error_event(
     assert "error" in events
     assert "provider is down" in events["error"][0]["message"]
     assert "done" not in events
+
+
+# ─── Citations: what the answer used, not just what retrieval found ────
+
+
+class CitingLLM(FakeLLM):
+    """Streams an answer that cites the first passage."""
+
+    def complete(
+        self, messages: Sequence[LLMMessage], **_kwargs: Any
+    ) -> AsyncIterator[CompletionChunk]:
+        self.seen_messages = list(messages)
+
+        async def _stream() -> AsyncIterator[CompletionChunk]:
+            yield CompletionChunk(delta="Alpha is documented ")
+            yield CompletionChunk(delta="in the handbook [1].")
+            yield CompletionChunk(tokens_in=100, tokens_out=9, finish_reason="stop")
+
+        return _stream()
+
+
+@pytest.fixture
+def citing_llm(monkeypatch: pytest.MonkeyPatch) -> CitingLLM:
+    llm = CitingLLM()
+
+    async def _get_llm(*_args: object, **_kwargs: object) -> CitingLLM:
+        return llm
+
+    async def _get_embeddings(*_args: object, **_kwargs: object) -> FakeEmbeddings:
+        return FakeEmbeddings()
+
+    monkeypatch.setattr("zk2.chat.rag.get_llm_provider", _get_llm)
+    monkeypatch.setattr("zk2.chat.rag.get_embedding_provider", _get_embeddings)
+    monkeypatch.setattr("zk2.sources.ingest.get_embedding_provider", _get_embeddings)
+    return llm
+
+
+async def test_context_passages_are_numbered_for_citation(
+    db: AsyncSession, org_owner: dict[str, Any], citing_llm: CitingLLM
+) -> None:
+    bot_id = await _bot_with_source(db, org_id=org_owner["org_id"], user_id=org_owner["user_id"])
+    await _collect(
+        stream_rag(
+            db,
+            org_id=org_owner["org_id"],
+            bot_id=bot_id,
+            user=None,
+            conversation_id=None,
+            user_message="alpha",
+        )
+    )
+    system_prompt = citing_llm.seen_messages[0].content
+    assert "[1] source: alpha.txt" in system_prompt
+    assert "square" in system_prompt and "brackets" in system_prompt
+
+
+async def test_citations_event_reports_the_used_passage(
+    db: AsyncSession, org_owner: dict[str, Any], citing_llm: CitingLLM
+) -> None:
+    bot_id = await _bot_with_source(db, org_id=org_owner["org_id"], user_id=org_owner["user_id"])
+    events = await _collect(
+        stream_rag(
+            db,
+            org_id=org_owner["org_id"],
+            bot_id=bot_id,
+            user=None,
+            conversation_id=None,
+            user_message="alpha",
+        )
+    )
+    await db.commit()
+
+    assert "citations" in events
+    (citations,) = events["citations"]
+    assert len(citations["items"]) == 1
+    assert citations["items"][0]["name"] == "alpha.txt"
+    assert citations["items"][0]["marker"] == 1
+
+
+async def test_message_records_which_passages_were_cited(
+    db: AsyncSession, org_owner: dict[str, Any], citing_llm: CitingLLM
+) -> None:
+    bot_id = await _bot_with_source(db, org_id=org_owner["org_id"], user_id=org_owner["user_id"])
+    events = await _collect(
+        stream_rag(
+            db,
+            org_id=org_owner["org_id"],
+            bot_id=bot_id,
+            user=None,
+            conversation_id=None,
+            user_message="alpha",
+        )
+    )
+    await db.commit()
+    conversation_id = events["conversation"][0]["id"]
+
+    message = (
+        (
+            await db.execute(
+                select(Message).where(
+                    Message.conversation_id == conversation_id, Message.role == "assistant"
+                )
+            )
+        )
+        .scalars()
+        .one()
+    )
+    assert message.sources is not None
+    cited = [s for s in message.sources if s["cited"]]
+    assert [s["marker"] for s in cited] == [1]
+    assert all("chunk_id" in s for s in message.sources)
+
+
+async def test_an_uncited_answer_emits_no_citations_event(
+    db: AsyncSession, org_owner: dict[str, Any], fake_llm: FakeLLM
+) -> None:
+    """The default fake answers without markers - nothing must be claimed as used."""
+    bot_id = await _bot_with_source(db, org_id=org_owner["org_id"], user_id=org_owner["user_id"])
+    events = await _collect(
+        stream_rag(
+            db,
+            org_id=org_owner["org_id"],
+            bot_id=bot_id,
+            user=None,
+            conversation_id=None,
+            user_message="alpha",
+        )
+    )
+    assert "citations" not in events
+    assert "sources" in events
