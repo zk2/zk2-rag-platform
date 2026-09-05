@@ -28,6 +28,7 @@ export default function ProvidersPage() {
           Keys are encrypted at rest with Fernet. They are write-only — never returned by the API.
         </p>
       </div>
+      <AllowanceBanner />
       <Card>
         <CardHeader><CardTitle>Configure</CardTitle></CardHeader>
         <CardContent className="space-y-6">
@@ -37,6 +38,59 @@ export default function ProvidersPage() {
         </CardContent>
       </Card>
       <EmbeddingCard />
+    </div>
+  );
+}
+
+type Allowance = {
+  enabled: boolean;
+  limit_tokens: number;
+  used_tokens: number;
+  remaining_tokens: number;
+  exhausted: boolean;
+  window_days: number;
+  own_keys: string[];
+};
+
+function AllowanceBanner() {
+  const allowance = useQuery({
+    queryKey: ["key-allowance"],
+    queryFn: () => api.get<Allowance>("/observability/allowance"),
+  });
+  const data = allowance.data;
+  if (!data) return null;
+
+  const share = data.limit_tokens > 0 ? (data.used_tokens / data.limit_tokens) * 100 : 100;
+  const tone = data.exhausted
+    ? "border-red-300 bg-red-50"
+    : share > 80
+      ? "border-amber-300 bg-amber-50"
+      : "border-slate-200 bg-slate-50";
+
+  return (
+    <div className={`rounded border p-4 space-y-2 ${tone}`}>
+      <div className="text-sm text-slate-900">
+        {data.exhausted ? (
+          <strong>The shared keys have served this organization their allowance.</strong>
+        ) : (
+          <>
+            Shared keys: <strong>{data.used_tokens.toLocaleString()}</strong> of{" "}
+            {data.limit_tokens.toLocaleString()} tokens used
+            {data.window_days > 0 && ` in the last ${data.window_days} days`}.
+          </>
+        )}
+      </div>
+      <div className="h-1.5 rounded bg-white/70">
+        <div
+          className={data.exhausted ? "h-1.5 rounded-r bg-red-600" : "h-1.5 rounded-r bg-slate-800"}
+          style={{ width: `${Math.min(Math.max(share, 1), 100)}%` }}
+        />
+      </div>
+      <p className="text-xs text-slate-600">
+        Keys you add below are used instead of the shared ones and have no allowance - the limit
+        exists only because the shared keys are the deployment&apos;s, not yours.
+        {data.own_keys.length > 0 && ` Your own keys: ${data.own_keys.join(", ")}.`}
+      </p>
     </div>
   );
 }

@@ -10,11 +10,14 @@ the deployment default.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from zk2.config import get_settings
 from zk2.core.errors import ValidationError
+from zk2.core.quota import KeySource, ensure_system_key_allowed
 from zk2.core.security import decrypt
 from zk2.llm.anthropic_provider import AnthropicProvider
 from zk2.llm.base import EmbeddingProvider, LLMProvider
@@ -36,29 +39,50 @@ async def _get_config(db: AsyncSession, org_id: int, provider: str) -> LLMProvid
     return row
 
 
-async def _get_api_key(db: AsyncSession, org_id: int, provider: str) -> str | None:
+@dataclass(frozen=True, slots=True)
+class ResolvedKey:
+    """A usable key and whose it is - the allowance depends on the difference."""
+
+    value: str
+    source: KeySource
+
+
+async def _resolve_key(db: AsyncSession, org_id: int, provider: str) -> ResolvedKey | None:
+    """The organization's own key if it has one, otherwise the deployment's."""
     row = await _get_config(db, org_id, provider)
     if row is not None and row.api_key_encrypted:
-        return decrypt(row.api_key_encrypted)
+        return ResolvedKey(decrypt(row.api_key_encrypted), KeySource.ORG)
+
     settings = get_settings().llm
     fallback = {
         "openai": settings.openai_api_key,
         "anthropic": settings.anthropic_api_key,
         "gemini": settings.gemini_api_key,
     }.get(provider)
-    return fallback.get_secret_value() if fallback else None
+    if fallback is None:
+        return None
+    return ResolvedKey(fallback.get_secret_value(), KeySource.SYSTEM)
 
 
 async def require_api_key(db: AsyncSession, *, org_id: int, provider: str) -> str:
     """Public accessor: the agent layer needs a key without building a provider."""
-    return await _require_key(db, org_id, provider)
+    return (await require_key(db, org_id, provider)).value
 
 
-async def _require_key(db: AsyncSession, org_id: int, provider: str) -> str:
-    key = await _get_api_key(db, org_id, provider)
-    if not key:
+async def require_key(db: AsyncSession, org_id: int, provider: str) -> ResolvedKey:
+    """Resolve a key, refusing a shared one once the allowance is spent."""
+    resolved = await _resolve_key(db, org_id, provider)
+    if resolved is None:
         raise ValidationError(f"{provider} API key not configured for this organization")
-    return key
+    if resolved.source is KeySource.SYSTEM:
+        await ensure_system_key_allowed(db, org_id=org_id, provider=provider)
+    return resolved
+
+
+async def key_source_for(db: AsyncSession, *, org_id: int, provider: str) -> KeySource:
+    """Whose key a call to this provider would use right now."""
+    resolved = await _resolve_key(db, org_id, provider)
+    return resolved.source if resolved else KeySource.ORG
 
 
 async def _ollama_base_url(db: AsyncSession, org_id: int) -> str:
@@ -72,17 +96,17 @@ async def get_llm_provider(db: AsyncSession, *, org_id: int, provider: str) -> L
     if provider == "openai":
         row = await _get_config(db, org_id, "openai")
         return OpenAIProvider(
-            api_key=await _require_key(db, org_id, "openai"),
+            api_key=(await require_key(db, org_id, "openai")).value,
             base_url=row.custom_base_url if row else None,
         )
     if provider == "anthropic":
         row = await _get_config(db, org_id, "anthropic")
         return AnthropicProvider(
-            api_key=await _require_key(db, org_id, "anthropic"),
+            api_key=(await require_key(db, org_id, "anthropic")).value,
             base_url=row.custom_base_url if row else None,
         )
     if provider == "gemini":
-        return GeminiProvider(api_key=await _require_key(db, org_id, "gemini"))
+        return GeminiProvider(api_key=(await require_key(db, org_id, "gemini")).value)
     if provider == "ollama":
         return OllamaProvider(base_url=await _ollama_base_url(db, org_id))
     raise ValidationError(f"Unknown LLM provider: {provider!r}")
@@ -109,6 +133,8 @@ async def get_embedding_provider(
         model = model or settings.embedding_model
 
     if provider == "openai":
-        return OpenAIEmbeddings(api_key=await _require_key(db, org_id, "openai"), model=model)
+        return OpenAIEmbeddings(
+            api_key=(await require_key(db, org_id, "openai")).value, model=model
+        )
     msg = f"Embedding provider {provider!r} not yet supported"
     raise ValidationError(msg)

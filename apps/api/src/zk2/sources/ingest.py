@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -11,8 +12,10 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from zk2.core.metrics import ingest_chunks_total, ingest_documents_total, ingest_duration_seconds
+from zk2.core.quota import KeySource, record_system_tokens
 from zk2.core.storage import get_storage
-from zk2.llm.registry import get_embedding_provider
+from zk2.llm.catalog import embedding_cost
+from zk2.llm.registry import get_embedding_provider, key_source_for
 from zk2.sources.chunking import chunk_document
 from zk2.sources.language import detect_language, search_config
 from zk2.sources.loaders import load_bytes
@@ -104,6 +107,14 @@ async def ingest_source(db: AsyncSession, *, source_id: int) -> None:
             {"sid": source_id, "cfg": source.lang_config},
         )
 
+        await _record_embedding_usage(
+            db,
+            org_id=source.org_id,
+            source_id=source_id,
+            model=emb_provider.model,
+            tokens=sum(c.tokens for c in chunks),
+        )
+
         source.status = SourceStatus.READY
         source.updated_at = datetime.now(UTC)
         ingest_documents_total.labels(status="ready").inc()
@@ -150,3 +161,34 @@ async def _clear_existing_chunks(db: AsyncSession, *, source_id: int) -> None:
     """When re-indexing, drop previous chunks (cascade clears embeddings + bm25)."""
     await db.execute(delete(SourceChunk).where(SourceChunk.source_id == source_id))
     await db.flush()
+
+
+async def _record_embedding_usage(
+    db: AsyncSession, *, org_id: int, source_id: int, model: str, tokens: int
+) -> None:
+    """Embeddings cost money too, and count against the shared-key allowance.
+
+    Without this row, indexing a large corpus on the deployment's key would be
+    invisible to both the usage view and the allowance.
+    """
+    source_kind = await key_source_for(db, org_id=org_id, provider="openai")
+    cost = embedding_cost(model, tokens=tokens)
+    await db.execute(
+        text(
+            "INSERT INTO usage_events "
+            "(org_id, event_type, provider, model, tokens_in, tokens_out, cost_usd,"
+            " key_source, metadata) "
+            "VALUES (:org, 'embedding', 'openai', :model, :tokens, 0, :cost,"
+            " :key_source, CAST(:meta AS jsonb))"
+        ),
+        {
+            "org": org_id,
+            "model": model,
+            "tokens": tokens,
+            "cost": cost,
+            "key_source": source_kind.value,
+            "meta": json.dumps({"source_id": source_id}),
+        },
+    )
+    if source_kind is KeySource.SYSTEM:
+        await record_system_tokens(org_id, tokens)

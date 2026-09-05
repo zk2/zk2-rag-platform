@@ -24,6 +24,19 @@ class UsageSummaryDto(BaseModel):
     by_model: list[ModelUsageDto]
 
 
+class AllowanceDto(BaseModel):
+    """How much of the deployment's own keys this organization may still use."""
+
+    enabled: bool
+    limit_tokens: int
+    used_tokens: int
+    remaining_tokens: int
+    exhausted: bool
+    window_days: int
+    # Providers this organization has its own key for - those are unlimited
+    own_keys: list[str]
+
+
 class ObservabilityLinks(BaseModel):
     grafana_url: str | None
     jaeger_url: str | None

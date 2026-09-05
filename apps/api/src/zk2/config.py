@@ -166,6 +166,19 @@ class ChatSettings(_Base):
     ws_idle_timeout_seconds: float = Field(900.0, alias="WS_IDLE_TIMEOUT_SECONDS")
 
 
+class QuotaSettings(_Base):
+    """How much of the deployment's own provider keys an organization may use.
+
+    Not billing: nobody is charged. This is the cap on lending someone else's
+    API key before the organization has to bring its own.
+    """
+
+    system_keys_enabled: bool = Field(True, alias="SYSTEM_KEYS_ENABLED")
+    system_key_token_limit: int = Field(200_000, alias="SYSTEM_KEY_TOKEN_LIMIT", ge=0)
+    # 0 means the allowance is for the lifetime of the organization
+    system_key_window_days: int = Field(0, alias="SYSTEM_KEY_WINDOW_DAYS", ge=0)
+
+
 class ToolSettings(_Base):
     """Agent tools. A tool with no configuration is simply not offered."""
 
@@ -207,6 +220,7 @@ class Settings:
         self.ingest = IngestSettings()
         self.retrieval = RetrievalSettings()
         self.tools = ToolSettings()
+        self.quota = QuotaSettings()
         self.chat = ChatSettings()
         self.storage = StorageSettings()
         self.super_admin = SuperAdminSeedSettings()

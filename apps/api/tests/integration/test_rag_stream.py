@@ -188,11 +188,21 @@ async def test_turn_persists_conversation_messages_and_usage_event(
     assert messages[1].sources, "assistant message should carry source attribution"
 
     usage = (
-        await db.execute(text("SELECT event_type, tokens_in, tokens_out FROM usage_events"))
+        await db.execute(
+            text(
+                "SELECT event_type, tokens_in, tokens_out FROM usage_events"
+                " WHERE event_type = 'llm_call'"
+            )
+        )
     ).all()
     assert len(usage) == 1
-    assert usage[0].event_type == "llm_call"
     assert usage[0].tokens_in == 120
+
+    # Indexing the source wrote its own event: embeddings cost money too
+    embeddings = (
+        await db.execute(text("SELECT count(*) FROM usage_events WHERE event_type = 'embedding'"))
+    ).scalar_one()
+    assert embeddings >= 1
 
 
 async def test_second_turn_reuses_the_conversation(

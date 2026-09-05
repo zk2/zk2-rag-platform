@@ -25,7 +25,9 @@ from zk2.auth.models import User
 from zk2.bots.models import Bot, BotSource, BotVersion, Conversation, Message
 from zk2.chat.events import StreamEvent
 from zk2.core.errors import NotFoundError, ValidationError
+from zk2.core.quota import KeySource, record_system_tokens
 from zk2.core.tracing import start_turn
+from zk2.llm.registry import key_source_for
 from zk2.pipelines.dag import DagSpec
 from zk2.pipelines.defaults import DEFAULT_DAG
 from zk2.pipelines.models import Pipeline, PipelineVersion
@@ -133,13 +135,14 @@ async def _record_usage(
     `cost` is NULL when the model is not in the catalog: an unknown price
     recorded as zero would quietly under-report spend.
     """
+    source = await key_source_for(db, org_id=org_id, provider=version.llm_provider)
     await db.execute(
         text(
             "INSERT INTO usage_events "
             "(org_id, bot_id, conversation_id, event_type, provider, model, "
-            " tokens_in, tokens_out, cost_usd, metadata) "
+            " tokens_in, tokens_out, cost_usd, key_source, metadata) "
             "VALUES (:org, :bot, :conv, 'llm_call', :prov, :model, "
-            "        :tin, :tout, :cost, CAST(:meta AS jsonb))"
+            "        :tin, :tout, :cost, :key_source, CAST(:meta AS jsonb))"
         ),
         {
             "org": org_id,
@@ -150,6 +153,7 @@ async def _record_usage(
             "tin": tokens_in,
             "tout": tokens_out,
             "cost": cost,
+            "key_source": source.value,
             # Experiment tags live in metadata so analytics can group by variant
             "meta": json.dumps(
                 {
@@ -166,6 +170,8 @@ async def _record_usage(
             ),
         },
     )
+    if source is KeySource.SYSTEM:
+        await record_system_tokens(org_id, tokens_in + tokens_out)
 
 
 async def _dag_for_version(db: AsyncSession, version_id: int) -> DagSpec | None:

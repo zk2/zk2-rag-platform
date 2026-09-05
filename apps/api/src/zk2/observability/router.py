@@ -24,7 +24,12 @@ from zk2.core.deps import get_db_dep
 from zk2.core.errors import ForbiddenError, NotFoundError
 from zk2.core.metrics import REGISTRY, ingest_queue_depth
 from zk2.core.redis_client import get_redis
-from zk2.observability.schemas import ModelUsageDto, ObservabilityLinks, UsageSummaryDto
+from zk2.observability.schemas import (
+    AllowanceDto,
+    ModelUsageDto,
+    ObservabilityLinks,
+    UsageSummaryDto,
+)
 
 logger = structlog.get_logger()
 
@@ -105,6 +110,41 @@ async def usage_summary(
             )
             for row in by_model
         ],
+    )
+
+
+@router.get("/observability/allowance", response_model=AllowanceDto)
+async def key_allowance(
+    ctx: Annotated[OrgContext, Depends(require_org("viewer"))],
+    db: Annotated[AsyncSession, Depends(get_db_dep)],
+) -> AllowanceDto:
+    """What is left of the shared-key allowance, and which providers bypass it."""
+    from sqlalchemy import select  # noqa: PLC0415
+
+    from zk2.core.quota import allowance  # noqa: PLC0415
+    from zk2.llm.models import LLMProviderConfig  # noqa: PLC0415
+
+    current = await allowance(db, org_id=ctx.org_id)
+    own = (
+        (
+            await db.execute(
+                select(LLMProviderConfig.provider).where(
+                    LLMProviderConfig.org_id == ctx.org_id,
+                    LLMProviderConfig.api_key_encrypted.is_not(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return AllowanceDto(
+        enabled=current.enabled,
+        limit_tokens=current.limit,
+        used_tokens=current.used,
+        remaining_tokens=current.remaining,
+        exhausted=current.exhausted,
+        window_days=get_settings().quota.system_key_window_days,
+        own_keys=sorted(own),
     )
 
 
