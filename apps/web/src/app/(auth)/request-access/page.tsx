@@ -49,7 +49,7 @@ export default function RequestAccessPage() {
     <>
       <h1 className="text-2xl font-bold mb-2">Request access</h1>
       <p className="text-sm text-slate-600 mb-6">
-        zk2-chatbot is invite-only. Tell us who you are and we’ll get back shortly.
+        ZK2 RAG Platform is invite-only. Tell us who you are and we'll get back shortly.
       </p>
       <form onSubmit={onSubmit} className="space-y-4">
         <div>

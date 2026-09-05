@@ -16,7 +16,7 @@ REDOC_TEMPLATE = """<!doctype html>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>zk2-chatbot API</title>
+    <title>ZK2 RAG Platform API</title>
     <style>body {{ margin: 0; }}</style>
   </head>
   <body>

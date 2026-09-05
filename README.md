@@ -1,4 +1,4 @@
-# zk2-chatbot
+# zk2-rag-platform
 
 Multi-tenant RAG platform: documents in, grounded answers out, with a visual
 pipeline editor, tool-using agents, evaluations and full observability.
@@ -101,7 +101,7 @@ make tf-validate   # terraform validate + fmt
 ## Project structure
 
 ```
-zk2-chatbot/
+zk2-rag-platform/
 ├── apps/
 │   ├── api/                 # FastAPI: auth, sources, retrieval, pipelines,
 │   │   └── src/zk2/         # agents, evals, A/B, observability

@@ -4,7 +4,7 @@ import { CREDENTIALS, signIn } from "./fixtures";
 test.describe("authentication", () => {
   test("the landing page says access is invite-only", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "zk2-chatbot" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "ZK2 RAG Platform" })).toBeVisible();
     await expect(page.getByText(/invite-only/i)).toBeVisible();
   });
 

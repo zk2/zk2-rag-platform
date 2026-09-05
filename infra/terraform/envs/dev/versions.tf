@@ -23,7 +23,7 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Project     = "zk2-chatbot"
+      Project     = "zk2-rag-platform"
       Environment = var.environment
       ManagedBy   = "terraform"
     }

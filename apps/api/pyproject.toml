@@ -1,7 +1,7 @@
 [project]
 name = "zk2-api"
 version = "0.1.0"
-description = "zk2-chatbot backend"
+description = "zk2-rag-platform backend"
 requires-python = ">=3.12,<3.14"
 readme = "README.md"
 dependencies = [

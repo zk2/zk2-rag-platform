@@ -51,7 +51,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen flex bg-slate-50">
       <aside className="w-60 bg-white border-r border-slate-200 flex flex-col">
         <div className="p-6">
-          <div className="font-bold text-slate-900">zk2-chatbot</div>
+          <div className="font-bold text-slate-900">ZK2 RAG Platform</div>
           <OrgSwitcher
             current={currentOrg}
             memberships={memberships}

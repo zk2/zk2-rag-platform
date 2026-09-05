@@ -33,7 +33,7 @@ logger = structlog.get_logger()
 
 ALLOWED_SCHEMES = frozenset({"http", "https"})
 DEFAULT_USER_AGENT = (
-    "Mozilla/5.0 (compatible; zk2-chatbot/0.1; +https://github.com/zeka/zk2-chatbot)"
+    "Mozilla/5.0 (compatible; zk2-rag-platform/0.1; +https://github.com/zeka/zk2-rag-platform)"
 )
 
 

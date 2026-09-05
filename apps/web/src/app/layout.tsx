@@ -3,7 +3,7 @@ import "./globals.css";
 import { Providers } from "@/lib/providers";
 
 export const metadata: Metadata = {
-  title: "zk2-chatbot",
+  title: "ZK2 RAG Platform",
   description: "Multi-tenant RAG platform with agents and visual pipeline builder",
 };
 

@@ -14,7 +14,7 @@ C4Context
   Person(member, "Organization member", "Uploads documents, builds bots, asks questions")
   Person(admin, "Super-admin", "Approves access requests, watches spend")
 
-  System(zk2, "zk2-chatbot", "Multi-tenant RAG platform: sources, pipelines, agents, evals")
+  System(zk2, "ZK2 RAG Platform", "Multi-tenant RAG platform: sources, pipelines, agents, evals")
 
   System_Ext(providers, "LLM providers", "OpenAI, Anthropic, Gemini, local Ollama")
   System_Ext(mcp, "MCP servers", "Tools an organization connected")
@@ -40,7 +40,7 @@ C4Container
 
   Person(user, "Member")
 
-  Container_Boundary(zk2, "zk2-chatbot") {
+  Container_Boundary(zk2, "ZK2 RAG Platform") {
     Container(web, "Web app", "Next.js 15, TypeScript", "Workspace, pipeline editor, evals, A/B console")
     Container(api, "API", "FastAPI, Python 3.12", "Auth, sources, chat over WebSocket, pipelines, evals")
     Container(worker, "Worker", "Arq", "Ingestion, eval runs, MCP health checks")

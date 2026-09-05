@@ -6,7 +6,7 @@ export default function Home() {
     <main className="min-h-screen flex items-center justify-center px-6">
       <div className="max-w-3xl text-center">
         <h1 className="text-5xl font-bold tracking-tight text-slate-900">
-          zk2-chatbot
+          ZK2 RAG Platform
         </h1>
         <p className="mt-6 text-lg text-slate-600">
           Production-grade multi-tenant RAG platform with agents, visual pipeline builder,

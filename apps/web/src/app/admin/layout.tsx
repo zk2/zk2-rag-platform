@@ -27,7 +27,7 @@ export default function AdminLayout({
   return (
     <div className="min-h-screen flex bg-slate-50">
       <aside className="w-60 bg-white border-r border-slate-200 p-6">
-        <div className="font-bold text-slate-900 mb-1">zk2-chatbot</div>
+        <div className="font-bold text-slate-900 mb-1">ZK2 RAG Platform</div>
         <div className="text-xs text-slate-500 mb-8">Super-admin</div>
         <nav className="flex flex-col gap-2 text-sm">
           <Link href="/admin/access-requests" className="text-slate-700 hover:text-slate-900">

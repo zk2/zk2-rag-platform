@@ -36,7 +36,7 @@ class _Base(BaseSettings):
 
 class AppSettings(_Base):
     env: Literal["dev", "test", "staging", "prod"] = Field("dev", alias="APP_ENV")
-    name: str = Field("zk2-chatbot", alias="APP_NAME")
+    name: str = Field("zk2-rag-platform", alias="APP_NAME")
     secret_key: SecretStr = Field(..., alias="APP_SECRET_KEY")
     base_url: str = Field("http://localhost:3000", alias="APP_BASE_URL")
     api_base_url: str = Field("http://localhost:8000", alias="API_BASE_URL")
