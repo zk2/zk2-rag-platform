@@ -10,6 +10,10 @@ from arq import cron
 from arq.connections import RedisSettings
 from sqlalchemy import select
 
+# IMPORTANT: register every ORM model before anything resolves a ForeignKey.
+# The worker does not go through main.py, so it has to do this itself - without
+# it, the first mapper configuration fails on a table it has never imported.
+import zk2.models_registry  # noqa: F401
 from zk2.agents.mcp_client import check_server
 from zk2.agents.models import McpServer
 from zk2.config import get_settings
