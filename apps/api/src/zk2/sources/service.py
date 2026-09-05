@@ -199,7 +199,7 @@ async def get_tree(
         where_parts.append("type = 'directory'")
     where_sql = " AND ".join(where_parts)
     sql = (
-        "SELECT id, type, name, status, CAST(path AS text) AS path "  # noqa: S608
+        "SELECT id, type, name, status, error, CAST(path AS text) AS path "  # noqa: S608
         f"FROM sources WHERE {where_sql} ORDER BY nlevel(path), name"
     )
     rows = (await db.execute(text(sql), params)).all()
@@ -216,6 +216,7 @@ def _build_tree(rows: Sequence[Row[Any]]) -> list[TreeNode]:
             "type": r.type,
             "name": r.name,
             "status": r.status,
+            "error": r.error,
             "children": [],
         }
         by_path[r.path] = node

@@ -58,6 +58,8 @@ class SourceNodeDto(BaseModel):
     type: str
     name: str
     status: str
+    # Why indexing failed, so the tree can say it without a second request
+    error: str | None = None
     children: list[SourceNodeDto] = []
 
 

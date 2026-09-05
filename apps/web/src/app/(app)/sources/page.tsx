@@ -15,6 +15,7 @@ type Node = {
   type: "directory" | "file" | "web";
   name: string;
   status: "pending" | "indexing" | "ready" | "failed";
+  error: string | null;
   children: Node[];
 };
 
@@ -89,9 +90,14 @@ function Tree() {
 
 function NodeRow({ node, depth }: { node: Node; depth: number }) {
   const qc = useQueryClient();
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["sources", "tree"] });
   const del = useMutation({
     mutationFn: () => api.delete(`/sources/${node.id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["sources", "tree"] }),
+    onSuccess: invalidate,
+  });
+  const reindex = useMutation({
+    mutationFn: () => api.post(`/sources/${node.id}/reindex`),
+    onSuccess: invalidate,
   });
   const Icon =
     node.type === "directory" ? Folder : node.type === "web" ? Globe : FileText;
@@ -114,17 +120,47 @@ function NodeRow({ node, depth }: { node: Node; depth: number }) {
             {node.status}
           </span>
         </div>
-        <button
-          className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-600"
-          onClick={() => {
-            if (confirm(`Delete "${node.name}" and its sub-tree?`))
-              del.mutate();
-          }}
-          title="Delete"
-        >
-          <Trash2 className="size-4" />
-        </button>
+        <div className="flex items-center gap-1 shrink-0">
+          {/* A directory holds no text of its own - the API refuses to index one */}
+          {node.type !== "directory" && (
+            <button
+              className={cn(
+                "text-slate-400 hover:text-slate-900 disabled:opacity-40",
+                node.status === "ready" && "opacity-0 group-hover:opacity-100",
+              )}
+              onClick={() => reindex.mutate()}
+              disabled={reindex.isPending || node.status === "indexing"}
+              title={
+                node.status === "ready"
+                  ? "Index again with the current embedding model"
+                  : "Index this document"
+              }
+            >
+              <RefreshCw
+                className={cn("size-4", reindex.isPending && "animate-spin")}
+              />
+            </button>
+          )}
+          <button
+            className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-600"
+            onClick={() => {
+              if (confirm(`Delete "${node.name}" and its sub-tree?`))
+                del.mutate();
+            }}
+            title="Delete"
+          >
+            <Trash2 className="size-4" />
+          </button>
+        </div>
       </div>
+      {node.error && (
+        <p
+          style={{ paddingLeft: depth * 16 + 32 }}
+          className="pb-1 text-xs text-red-600"
+        >
+          {node.error}
+        </p>
+      )}
       {node.children.length > 0 && (
         <ul>
           {node.children.map((c) => (

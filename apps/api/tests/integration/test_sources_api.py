@@ -6,6 +6,8 @@ from typing import Any
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from zk2.config import get_settings
 
@@ -140,3 +142,38 @@ async def test_sitemap_import_creates_sources(
     assert len(resp.json()) == 2
     tree = (await owner_client.get("/sources/tree")).json()
     assert {n["name"] for n in tree} == {"https://example.com/a", "https://example.com/b"}
+
+
+async def test_a_failed_document_can_be_indexed_again_and_says_why_it_failed(
+    owner_client: AsyncClient, db: AsyncSession
+) -> None:
+    """Indexing fails whenever a provider key is missing or spent. The tree has
+    to carry the reason, and there has to be a way back - otherwise a document
+    is stuck with nothing but the word FAILED next to it."""
+    upload = await owner_client.post(
+        "/sources/file", files={"file": ("notes.txt", b"hello there", "text/plain")}
+    )
+    source_id = upload.json()["id"]
+    await db.execute(
+        text("UPDATE sources SET status = 'failed', error = :e WHERE id = :id"),
+        {"e": "openai: You have no credits remaining.", "id": source_id},
+    )
+    await db.commit()
+
+    node = (await owner_client.get("/sources/tree")).json()[0]
+    assert node["status"] == "failed"
+    assert node["error"] == "openai: You have no credits remaining."
+
+    again = await owner_client.post(f"/sources/{source_id}/reindex")
+    assert again.status_code == 200, again.text
+    assert again.json()["status"] == "pending"
+
+    node = (await owner_client.get("/sources/tree")).json()[0]
+    assert node["error"] is None, "a queued retry clears the old failure"
+
+
+async def test_a_directory_cannot_be_indexed(owner_client: AsyncClient) -> None:
+    folder = await owner_client.post("/sources/directory", json={"name": "Docs"})
+    resp = await owner_client.post(f"/sources/{folder.json()['id']}/reindex")
+    assert resp.status_code == 422
+    assert "nothing to index" in resp.json()["error"]["message"]
