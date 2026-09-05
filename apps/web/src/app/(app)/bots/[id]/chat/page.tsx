@@ -20,6 +20,8 @@ type Msg = {
     // Set once the answer is complete: did the model actually cite this passage
     cited?: boolean;
   }>;
+  // What the agent did on the way to the answer
+  toolCalls?: Array<{ name: string; args: Record<string, unknown>; result?: string }>;
   usage?: {
     tokens_in: number;
     tokens_out: number;
@@ -68,6 +70,30 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
               return [...m.slice(0, -1), { ...last, sources: data.items }];
             }
             return [...m, { role: "assistant", content: "", sources: data.items }];
+          });
+          break;
+        case "tool_call":
+          setMessages((m) => {
+            const last = m[m.length - 1];
+            const call = { name: data.name, args: data.args };
+            if (last && last.role === "assistant") {
+              return [
+                ...m.slice(0, -1),
+                { ...last, toolCalls: [...(last.toolCalls ?? []), call] },
+              ];
+            }
+            return [...m, { role: "assistant", content: "", toolCalls: [call] }];
+          });
+          break;
+        case "tool_result":
+          setMessages((m) => {
+            const last = m[m.length - 1];
+            if (!last || last.role !== "assistant" || !last.toolCalls?.length) return m;
+            const calls = [...last.toolCalls];
+            // Results arrive in call order; fill the first one still waiting
+            const pending = calls.findIndex((c) => c.result === undefined);
+            if (pending >= 0) calls[pending] = { ...calls[pending], result: data.result };
+            return [...m.slice(0, -1), { ...last, toolCalls: calls }];
           });
           break;
         case "citations": {
@@ -221,6 +247,30 @@ function MessageBubble({ msg }: { msg: Msg }) {
       >
         {msg.content || (msg.role === "assistant" ? "…" : "")}
       </div>
+      {msg.toolCalls && msg.toolCalls.length > 0 && (
+        <div className="mt-1 space-y-1">
+          {msg.toolCalls.map((call, index) => (
+            <details
+              key={`${call.name}-${index}`}
+              className="text-[11px] border border-slate-200 rounded bg-slate-50 px-2 py-1"
+            >
+              <summary className="cursor-pointer text-slate-700">
+                <span className="font-medium">{call.name}</span>
+                <span className="text-slate-500">
+                  {" "}
+                  {JSON.stringify(call.args).slice(0, 60)}
+                </span>
+                {call.result === undefined && <span className="text-amber-700"> · running…</span>}
+              </summary>
+              {call.result !== undefined && (
+                <pre className="mt-1 whitespace-pre-wrap text-slate-600 max-h-32 overflow-y-auto">
+                  {call.result}
+                </pre>
+              )}
+            </details>
+          ))}
+        </div>
+      )}
       {msg.sources && msg.sources.length > 0 && (
         <div className="mt-1 space-y-1">
           <div className="flex flex-wrap gap-1">

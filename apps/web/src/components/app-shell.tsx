@@ -14,6 +14,7 @@ import {
   Shield,
   Activity,
   GitBranch,
+  Wrench,
 } from "lucide-react";
 
 const NAV = [
@@ -22,6 +23,7 @@ const NAV = [
   { href: "/pipelines", label: "Pipelines", icon: GitBranch },
   { href: "/observability", label: "Observability", icon: Activity },
   { href: "/settings/providers", label: "Settings", icon: SettingsIcon },
+  { href: "/settings/mcp", label: "Tools", icon: Wrench },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
