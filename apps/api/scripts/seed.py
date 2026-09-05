@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 import structlog
 from slugify import slugify
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from zk2.auth.models import Membership, Organization, User
 from zk2.config import get_settings
@@ -28,8 +29,8 @@ logger = structlog.get_logger()
 DEFAULT_ORG_NAME = "Demo workspace"
 
 
-async def _ensure_super_admin(db, email: str, password: str) -> User:  # type: ignore[no-untyped-def]
-    user = await db.scalar(select(User).where(User.email == email.lower()))
+async def _ensure_super_admin(db: AsyncSession, email: str, password: str) -> User:
+    user: User | None = await db.scalar(select(User).where(User.email == email.lower()))
     if user is not None:
         if not user.is_super_admin:
             user.is_super_admin = True
@@ -51,15 +52,20 @@ async def _ensure_super_admin(db, email: str, password: str) -> User:  # type: i
     return user
 
 
-async def _ensure_workspace(db, user: User) -> Organization:  # type: ignore[no-untyped-def]
+async def _ensure_workspace(db: AsyncSession, user: User) -> Organization:
     membership = await db.scalar(select(Membership).where(Membership.user_id == user.id))
     if membership is not None:
-        org = await db.scalar(select(Organization).where(Organization.id == membership.org_id))
-        logger.info("seed.workspace_exists", org=org.slug if org else membership.org_id)
-        return org  # type: ignore[return-value]
+        existing: Organization | None = await db.scalar(
+            select(Organization).where(Organization.id == membership.org_id)
+        )
+        if existing is not None:
+            logger.info("seed.workspace_exists", org=existing.slug)
+            return existing
 
     slug = slugify(DEFAULT_ORG_NAME)
-    org = await db.scalar(select(Organization).where(Organization.slug == slug))
+    org: Organization | None = await db.scalar(
+        select(Organization).where(Organization.slug == slug)
+    )
     if org is None:
         org = Organization(slug=slug, name=DEFAULT_ORG_NAME)
         db.add(org)

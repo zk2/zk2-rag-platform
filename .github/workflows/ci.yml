@@ -29,11 +29,11 @@ jobs:
       - name: Ruff
         working-directory: apps/api
         run: |
-          uv run ruff check src tests
-          uv run ruff format --check src tests
+          uv run ruff check src tests scripts
+          uv run ruff format --check src tests scripts
       - name: Mypy
         working-directory: apps/api
-        run: uv run mypy src
+        run: uv run mypy src scripts
 
   api-test:
     name: API — pytest (testcontainers)

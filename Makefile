@@ -78,8 +78,16 @@ migrate-new: ## Generate new migration: make migrate-new name="add_xxx"
 	cd $(API_DIR) && uv run alembic revision --autogenerate -m "$(name)"
 
 .PHONY: seed
-seed: ## Seed super-admin + demo data
+seed: ## Seed the super-admin and a workspace to sign into
 	cd $(API_DIR) && uv run python -m scripts.seed
+
+.PHONY: seed-demo
+seed-demo: ## Add demo documents, a bot, a pipeline and a golden set
+	cd $(API_DIR) && uv run python -m scripts.seed_demo
+
+.PHONY: seed-demo-indexed
+seed-demo-indexed: ## Same, but index the documents now (spends embedding tokens)
+	cd $(API_DIR) && uv run python -m scripts.seed_demo --ingest
 
 ## ── Quality ──────────────────────────────────────────────────
 
@@ -88,9 +96,9 @@ lint: lint-api lint-web ## Lint everything
 
 .PHONY: lint-api
 lint-api: ## Ruff + mypy on api
-	cd $(API_DIR) && uv run ruff check src tests
-	cd $(API_DIR) && uv run ruff format --check src tests
-	cd $(API_DIR) && uv run mypy src
+	cd $(API_DIR) && uv run ruff check src tests scripts
+	cd $(API_DIR) && uv run ruff format --check src tests scripts
+	cd $(API_DIR) && uv run mypy src scripts
 
 .PHONY: lint-web
 lint-web: ## ESLint + tsc on web
@@ -119,6 +127,12 @@ test-web: ## Vitest
 .PHONY: e2e
 e2e: ## Playwright e2e
 	pnpm --filter web e2e
+
+## ── API docs ─────────────────────────────────────────────────
+
+.PHONY: openapi
+openapi: ## Export the OpenAPI spec and a standalone Redoc page
+	cd $(API_DIR) && uv run python -m scripts.export_openapi ../../docs/api
 
 ## ── Types ────────────────────────────────────────────────────
 
