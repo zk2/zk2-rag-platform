@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 import structlog
 
 from zk2.chat.events import StreamEvent
-from zk2.core.errors import ValidationError
+from zk2.core.errors import AppError, ValidationError
 from zk2.pipelines.dag import DagSpec, topological_order
 from zk2.pipelines.nodes import REGISTRY
 from zk2.pipelines.state import NodeContext, PipelineState
@@ -80,14 +80,34 @@ async def execute(
 
         step = ctx.trace.step(spec.id, kind="span", metadata={"node_type": spec.type})
         started = time.perf_counter()
-        async for event in node.run(state, ctx, config):
-            yield event
+        # Any node can fail on something outside the pipeline's control - a
+        # provider with no credits left, a database hiccup. That is a failed
+        # run with a reason attached, the way the generate node has always
+        # reported its own failures, and never a 500 for the whole request.
+        failure: str | None = None
+        try:
+            async for event in node.run(state, ctx, config):
+                yield event
+        except AppError as exc:
+            failure = exc.message
+        except Exception as exc:  # the reason is reported to the caller, not swallowed
+            failure = str(exc) or exc.__class__.__name__
+
         duration_ms = int((time.perf_counter() - started) * 1000)
-        step.end(node_type=spec.type, duration_ms=duration_ms)
+        if failure is None:
+            step.end(node_type=spec.type, duration_ms=duration_ms)
+        else:
+            step.end(level="ERROR", status_message=failure[:500])
 
         if report is not None:
             report.timings.append(NodeTiming(spec.id, spec.type, duration_ms))
         logger.debug("pipeline.node", node=spec.id, type=spec.type, ms=duration_ms)
+
+        if failure is not None:
+            state.failed = True
+            logger.warning("pipeline.node_failed", node=spec.id, type=spec.type, error=failure)
+            yield StreamEvent("error", {"message": failure})
+            return
 
         if state.failed:
             logger.warning("pipeline.aborted", node=spec.id)

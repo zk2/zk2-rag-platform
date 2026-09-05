@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.integration.test_ingest_and_retrieval import FakeEmbeddings
 from tests.integration.test_rag_stream import ANSWER_PARTS, FakeLLM
+from zk2.llm.errors import ProviderError
 
 pytestmark = pytest.mark.integration
 
@@ -216,3 +217,54 @@ async def test_pipelines_are_scoped_to_the_organization(
     }
     resp = await client.get(f"/pipelines/{created['id']}", headers=headers)
     assert resp.status_code == 404
+
+
+async def test_a_failing_node_is_a_failed_run_not_a_500(
+    owner_client: AsyncClient,
+    db: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    fakes: FakeLLM,
+) -> None:
+    """A provider that refuses to answer used to escape the dense retriever and
+    reach the client as "Internal server error". The editor needs the reason."""
+
+    class DeadEmbeddings(FakeEmbeddings):
+        async def embed_query(self, text: str) -> list[float]:
+            raise ProviderError("openai", "You have no credits remaining.", code="provider_quota")
+
+    async def _dead(*_args: object, **_kwargs: object) -> DeadEmbeddings:
+        return DeadEmbeddings()
+
+    monkeypatch.setattr("zk2.pipelines.nodes.get_embedding_provider", _dead)
+
+    upload = await owner_client.post(
+        "/sources/file", files={"file": ("alpha.txt", b"alpha alpha documented", "text/plain")}
+    )
+    created = await _create(owner_client)  # the default graph starts with retriever_dense
+    bot = (
+        await owner_client.post(
+            "/bots",
+            json={
+                "name": "Helper",
+                "llm_model": "gpt-4.1-mini",
+                # without a source the dense node short-circuits and never embeds
+                "source_ids": [upload.json()["id"]],
+            },
+        )
+    ).json()
+
+    resp = await owner_client.post(
+        f"/pipelines/{created['id']}/test",
+        json={"bot_id": bot["id"], "question": "what about alpha?"},
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "failed"
+    assert body["error"] == "openai: You have no credits remaining."
+    assert body["answer"] is None
+    assert [n["node_id"] for n in body["nodes"]][-1] == "dense", "the failing node is timed too"
+
+    runs = (await db.execute(text("SELECT status, error FROM pipeline_runs"))).all()
+    assert runs[0].status == "failed"
+    assert "no credits" in runs[0].error

@@ -9,6 +9,7 @@ import pytest
 
 from zk2.config import get_settings
 from zk2.core.errors import ValidationError
+from zk2.llm.errors import ProviderError
 from zk2.llm.openai_provider import OpenAIEmbeddings
 
 pytestmark = pytest.mark.unit
@@ -83,3 +84,27 @@ async def test_model_outside_the_catalog_sends_no_dimensions_param(
     provider = OpenAIEmbeddings(api_key="sk-test", model="some-new-embedding")
     await provider.embed_documents(["text"])
     assert "dimensions" not in fake_api.calls[0]
+
+
+async def test_a_dead_key_surfaces_as_a_provider_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The 429 that ends a prepaid balance must not reach callers as a raw SDK
+    exception - every caller of this adapter renders `str(exc)` to somebody."""
+
+    class _ExhaustedError(Exception):
+        status_code = 429
+        body = {  # noqa: RUF012 - a literal stand-in for the SDK's parsed body
+            "error": {"message": "You have no credits remaining.", "code": "insufficient_quota"}
+        }
+
+    class _DeadAPI:
+        async def create(self, **_kwargs: Any) -> None:
+            raise _ExhaustedError
+
+    monkeypatch.setattr(
+        "zk2.llm.openai_provider.AsyncOpenAI",
+        lambda **_kwargs: SimpleNamespace(embeddings=_DeadAPI()),
+    )
+    provider = OpenAIEmbeddings(api_key="sk-test")
+
+    with pytest.raises(ProviderError, match=r"openai: You have no credits remaining\."):
+        await provider.embed_query("question")

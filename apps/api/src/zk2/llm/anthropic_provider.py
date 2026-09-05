@@ -24,6 +24,7 @@ from anthropic import AsyncAnthropic
 from zk2.llm.base import CompletionChunk, LLMProvider, Message
 from zk2.llm.catalog import estimate_cost as catalog_cost
 from zk2.llm.catalog import get_catalog
+from zk2.llm.errors import provider_call
 
 logger = structlog.get_logger()
 
@@ -65,21 +66,22 @@ class AnthropicProvider(LLMProvider):
         if temperature and (spec is None or spec.supports_temperature):
             kwargs["temperature"] = temperature
 
-        if not stream:
-            message = await self._client.messages.create(**kwargs)
-            text = "".join(b.text for b in message.content if b.type == "text")
-            yield CompletionChunk(
-                delta=text,
-                tokens_in=message.usage.input_tokens,
-                tokens_out=message.usage.output_tokens,
-                finish_reason=message.stop_reason,
-            )
-            return
+        async with provider_call(self.name):
+            if not stream:
+                message = await self._client.messages.create(**kwargs)
+                text = "".join(b.text for b in message.content if b.type == "text")
+                yield CompletionChunk(
+                    delta=text,
+                    tokens_in=message.usage.input_tokens,
+                    tokens_out=message.usage.output_tokens,
+                    finish_reason=message.stop_reason,
+                )
+                return
 
-        async with self._client.messages.stream(**kwargs) as stream_ctx:
-            async for text in stream_ctx.text_stream:
-                yield CompletionChunk(delta=text)
-            final = await stream_ctx.get_final_message()
+            async with self._client.messages.stream(**kwargs) as stream_ctx:
+                async for text in stream_ctx.text_stream:
+                    yield CompletionChunk(delta=text)
+                final = await stream_ctx.get_final_message()
 
         if final.stop_reason == "refusal":
             logger.warning("anthropic.refusal", model=model, details=final.stop_details)

@@ -13,6 +13,7 @@ from zk2.core.errors import ValidationError
 from zk2.llm.base import CompletionChunk, EmbeddingProvider, LLMProvider, Message
 from zk2.llm.catalog import estimate_cost as catalog_cost
 from zk2.llm.catalog import get_catalog
+from zk2.llm.errors import provider_call
 
 
 class OpenAIProvider(LLMProvider):
@@ -31,39 +32,40 @@ class OpenAIProvider(LLMProvider):
         max_tokens: int | None = None,
     ) -> AsyncIterator[CompletionChunk]:
         payload_messages = [{"role": m.role, "content": m.content} for m in messages]
-        if not stream:
-            resp = await self._client.chat.completions.create(
+        async with provider_call(self.name):
+            if not stream:
+                resp = await self._client.chat.completions.create(
+                    model=model,
+                    messages=payload_messages,  # type: ignore[arg-type]
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                choice = resp.choices[0]
+                yield CompletionChunk(
+                    delta=choice.message.content or "",
+                    tokens_in=resp.usage.prompt_tokens if resp.usage else None,
+                    tokens_out=resp.usage.completion_tokens if resp.usage else None,
+                    finish_reason=choice.finish_reason,
+                )
+                return
+
+            async with self._client.chat.completions.stream(
                 model=model,
                 messages=payload_messages,  # type: ignore[arg-type]
                 temperature=temperature,
                 max_tokens=max_tokens,
-            )
-            choice = resp.choices[0]
-            yield CompletionChunk(
-                delta=choice.message.content or "",
-                tokens_in=resp.usage.prompt_tokens if resp.usage else None,
-                tokens_out=resp.usage.completion_tokens if resp.usage else None,
-                finish_reason=choice.finish_reason,
-            )
-            return
-
-        async with self._client.chat.completions.stream(
-            model=model,
-            messages=payload_messages,  # type: ignore[arg-type]
-            temperature=temperature,
-            max_tokens=max_tokens,
-        ) as stream_ctx:
-            async for event in stream_ctx:
-                if event.type == "content.delta":
-                    yield CompletionChunk(delta=event.delta)
-                elif event.type == "content.done":
-                    yield CompletionChunk(finish_reason="stop")
-            final = await stream_ctx.get_final_completion()
-            if final.usage:
-                yield CompletionChunk(
-                    tokens_in=final.usage.prompt_tokens,
-                    tokens_out=final.usage.completion_tokens,
-                )
+            ) as stream_ctx:
+                async for event in stream_ctx:
+                    if event.type == "content.delta":
+                        yield CompletionChunk(delta=event.delta)
+                    elif event.type == "content.done":
+                        yield CompletionChunk(finish_reason="stop")
+                final = await stream_ctx.get_final_completion()
+                if final.usage:
+                    yield CompletionChunk(
+                        tokens_in=final.usage.prompt_tokens,
+                        tokens_out=final.usage.completion_tokens,
+                    )
 
     def estimate_cost(self, model: str, *, tokens_in: int, tokens_out: int) -> Decimal | None:
         return catalog_cost(model, tokens_in=tokens_in, tokens_out=tokens_out)
@@ -101,13 +103,14 @@ class OpenAIEmbeddings(EmbeddingProvider):
         if not texts:
             return []
         vectors: list[list[float]] = []
-        for start in range(0, len(texts), self._batch_size):
-            batch = texts[start : start + self._batch_size]
-            kwargs: dict[str, Any] = {"model": self.model, "input": batch}
-            if self._supports_dimensions:
-                kwargs["dimensions"] = self.dimensions
-            resp = await self._client.embeddings.create(**kwargs)
-            vectors.extend(d.embedding for d in resp.data)
+        async with provider_call(self.name):
+            for start in range(0, len(texts), self._batch_size):
+                batch = texts[start : start + self._batch_size]
+                kwargs: dict[str, Any] = {"model": self.model, "input": batch}
+                if self._supports_dimensions:
+                    kwargs["dimensions"] = self.dimensions
+                resp = await self._client.embeddings.create(**kwargs)
+                vectors.extend(d.embedding for d in resp.data)
         return vectors
 
     async def embed_query(self, text: str) -> list[float]:

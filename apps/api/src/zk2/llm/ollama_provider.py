@@ -19,6 +19,7 @@ import httpx
 import structlog
 
 from zk2.llm.base import CompletionChunk, LLMProvider, Message
+from zk2.llm.errors import provider_call
 
 logger = structlog.get_logger()
 
@@ -49,7 +50,7 @@ class OllamaProvider(LLMProvider):
         if max_tokens:
             payload["options"]["num_predict"] = max_tokens
 
-        async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+        async with provider_call(self.name), httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
             if not stream:
                 response = await client.post(f"{self._base_url}/api/chat", json=payload)
                 response.raise_for_status()

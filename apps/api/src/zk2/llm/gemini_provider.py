@@ -14,6 +14,7 @@ from google.genai import types as genai_types
 
 from zk2.llm.base import CompletionChunk, LLMProvider, Message
 from zk2.llm.catalog import estimate_cost as catalog_cost
+from zk2.llm.errors import provider_call
 
 _ROLE_MAP = {"assistant": "model", "user": "user"}
 
@@ -48,28 +49,29 @@ class GeminiProvider(LLMProvider):
             max_output_tokens=max_tokens,
         )
 
-        if not stream:
-            response = await self._client.aio.models.generate_content(
-                model=model, contents=contents, config=config
-            )
-            usage = response.usage_metadata
-            yield CompletionChunk(
-                delta=response.text or "",
-                tokens_in=usage.prompt_token_count if usage else None,
-                tokens_out=usage.candidates_token_count if usage else None,
-                finish_reason="stop",
-            )
-            return
+        async with provider_call(self.name):
+            if not stream:
+                response = await self._client.aio.models.generate_content(
+                    model=model, contents=contents, config=config
+                )
+                usage = response.usage_metadata
+                yield CompletionChunk(
+                    delta=response.text or "",
+                    tokens_in=usage.prompt_token_count if usage else None,
+                    tokens_out=usage.candidates_token_count if usage else None,
+                    finish_reason="stop",
+                )
+                return
 
-        tokens_in = tokens_out = None
-        async for chunk in await self._client.aio.models.generate_content_stream(
-            model=model, contents=contents, config=config
-        ):
-            if chunk.text:
-                yield CompletionChunk(delta=chunk.text)
-            if chunk.usage_metadata:
-                tokens_in = chunk.usage_metadata.prompt_token_count
-                tokens_out = chunk.usage_metadata.candidates_token_count
+            tokens_in = tokens_out = None
+            async for chunk in await self._client.aio.models.generate_content_stream(
+                model=model, contents=contents, config=config
+            ):
+                if chunk.text:
+                    yield CompletionChunk(delta=chunk.text)
+                if chunk.usage_metadata:
+                    tokens_in = chunk.usage_metadata.prompt_token_count
+                    tokens_out = chunk.usage_metadata.candidates_token_count
         yield CompletionChunk(tokens_in=tokens_in, tokens_out=tokens_out, finish_reason="stop")
 
     def estimate_cost(self, model: str, *, tokens_in: int, tokens_out: int) -> Decimal | None:
