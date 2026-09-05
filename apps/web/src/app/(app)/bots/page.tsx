@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import { SourcePicker, type SourceNode } from "@/components/source-picker";
 import { formatPrice, useCatalog } from "@/lib/catalog";
-import { Trash2, MessageSquare, Settings } from "lucide-react";
+import { Trash2, MessageSquare, Settings, FlaskConical } from "lucide-react";
 
 type Bot = {
   id: number;
@@ -61,6 +61,11 @@ function BotsList() {
                 </div>
               </div>
               <div className="flex gap-2">
+                <Link href={`/bots/${b.id}/ab`}>
+                  <Button size="sm" variant="outline">
+                    <FlaskConical className="size-4 mr-1" /> A/B
+                  </Button>
+                </Link>
                 <Link href={`/bots/${b.id}/settings`}>
                   <Button size="sm" variant="outline">
                     <Settings className="size-4 mr-1" /> Settings

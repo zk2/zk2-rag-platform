@@ -15,12 +15,14 @@ import {
   Activity,
   GitBranch,
   Wrench,
+  FlaskConical,
 } from "lucide-react";
 
 const NAV = [
   { href: "/sources", label: "Sources", icon: FolderTree },
   { href: "/bots", label: "Bots", icon: Bot },
   { href: "/pipelines", label: "Pipelines", icon: GitBranch },
+  { href: "/evals", label: "Evals", icon: FlaskConical },
   { href: "/observability", label: "Observability", icon: Activity },
   { href: "/settings/providers", label: "Settings", icon: SettingsIcon },
   { href: "/settings/mcp", label: "Tools", icon: Wrench },
