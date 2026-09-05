@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
@@ -12,6 +13,7 @@ import pytest
 from zk2.llm.anthropic_provider import AnthropicProvider
 from zk2.llm.base import Message
 from zk2.llm.ollama_provider import OllamaProvider
+from zk2.llm.openai_provider import OpenAIProvider
 
 pytestmark = pytest.mark.unit
 
@@ -207,3 +209,70 @@ def test_local_inference_is_free_not_unknown() -> None:
     assert provider.estimate_cost("llama3.1:8b", tokens_in=10_000, tokens_out=10_000) == Decimal(
         "0.000000"
     )
+
+
+# --- OpenAI -----------------------------------------------------------
+
+
+class FakeOpenAIStream:
+    """The SDK's streaming helper: an event iterator plus a final completion."""
+
+    def __init__(self, parts: list[str], usage: tuple[int, int] | None) -> None:
+        self._parts = parts
+        self._usage = usage
+
+    async def __aenter__(self) -> FakeOpenAIStream:
+        return self
+
+    async def __aexit__(self, *_exc: object) -> None:
+        return None
+
+    async def __aiter__(self) -> AsyncIterator[SimpleNamespace]:
+        for part in self._parts:
+            yield SimpleNamespace(type="content.delta", delta=part)
+        yield SimpleNamespace(type="content.done")
+
+    async def get_final_completion(self) -> SimpleNamespace:
+        usage = (
+            SimpleNamespace(prompt_tokens=self._usage[0], completion_tokens=self._usage[1])
+            if self._usage
+            else None
+        )
+        return SimpleNamespace(usage=usage)
+
+
+@pytest.fixture
+def fake_openai(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    seen: dict[str, Any] = {}
+
+    class FakeCompletions:
+        def stream(self, **kwargs: Any) -> FakeOpenAIStream:
+            seen.update(kwargs)
+            # Usage only comes back when the request asked for it
+            usage = (95, 12) if kwargs.get("stream_options", {}).get("include_usage") else None
+            return FakeOpenAIStream(["Alpha ", "is a letter."], usage)
+
+    monkeypatch.setattr(
+        "zk2.llm.openai_provider.AsyncOpenAI",
+        lambda **_kwargs: SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions())),
+    )
+    return seen
+
+
+async def test_openai_streams_and_reports_usage(fake_openai: dict[str, Any]) -> None:
+    """A streamed call must still be accounted for: the allowance, the spend
+    dashboard and the A/B cost comparison all read these numbers."""
+    provider = OpenAIProvider(api_key="sk-test")
+    chunks = await _collect(provider, model="gpt-4.1-mini")
+
+    assert fake_openai["stream_options"] == {"include_usage": True}
+    assert "".join(c.delta for c in chunks) == "Alpha is a letter."
+    assert chunks[-1].tokens_in == 95
+    assert chunks[-1].tokens_out == 12
+
+
+async def test_openai_prices_a_streamed_call(fake_openai: dict[str, Any]) -> None:
+    provider = OpenAIProvider(api_key="sk-test")
+    cost = provider.estimate_cost("gpt-4.1-mini", tokens_in=95, tokens_out=12)
+    assert cost is not None
+    assert cost > 0

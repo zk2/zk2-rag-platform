@@ -54,6 +54,10 @@ class OpenAIProvider(LLMProvider):
                 messages=payload_messages,  # type: ignore[arg-type]
                 temperature=temperature,
                 max_tokens=max_tokens,
+                # A streamed response carries no usage unless it is asked for,
+                # and the SDK does not ask on its own. Without this every
+                # streamed call is accounted for as zero tokens and zero cost.
+                stream_options={"include_usage": True},
             ) as stream_ctx:
                 async for event in stream_ctx:
                     if event.type == "content.delta":

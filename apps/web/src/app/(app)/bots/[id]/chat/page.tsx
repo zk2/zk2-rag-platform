@@ -54,6 +54,7 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
     const ws = new WebSocket(wsUrl(`/ws/chat/${botId}`));
     wsRef.current = ws;
     let ready = false;
+    let discarded = false;
 
     ws.onopen = () => {
       ws.send(
@@ -67,6 +68,7 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
           ready = true;
           retriedAuth.current = false;
           setConnected(true);
+          setError(null);
           break;
         case "conversation":
           setConversationId(data.id);
@@ -162,6 +164,7 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
       }
     };
     ws.onclose = () => {
+      if (discarded) return;
       setConnected(false);
       // Closed before it ever said "ready": the token was refused. Refresh
       // once - the new token re-runs this effect and reconnects.
@@ -171,8 +174,22 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
         if (!token && over) setError("Session expired. Sign in again.");
       });
     };
-    ws.onerror = () => setError("WebSocket error");
-    return () => ws.close();
+    ws.onerror = () => {
+      if (!discarded) setError("WebSocket error");
+    };
+
+    return () => {
+      // This socket is being replaced - in dev that happens on every mount,
+      // because StrictMode runs the effect twice. Closing one that is still
+      // CONNECTING fires an error event, which used to surface as "WebSocket
+      // error" next to a connection that had in fact just succeeded.
+      discarded = true;
+      if (ws.readyState === WebSocket.CONNECTING) {
+        ws.addEventListener("open", () => ws.close(), { once: true });
+      } else {
+        ws.close();
+      }
+    };
   }, [accessToken, botId, currentOrgId]);
 
   useEffect(() => {
