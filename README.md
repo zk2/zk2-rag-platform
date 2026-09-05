@@ -6,8 +6,9 @@ pipeline editor, tool-using agents, evaluations and full observability.
 Built as a portfolio project - the interesting part is not that it works, but
 that every non-obvious decision is written down next to the code that made it.
 
-> **Status:** feature-complete through the planned slices (`v0.8`). Deployed
-> nowhere public: access is invite-only by design.
+> **Status:** feature-complete through the planned slices (`v0.8`), running at
+> <https://rag-platform.reldava.com>. Access is invite-only by design - there is
+> no self-signup endpoint to find, so the demo is a link plus an invitation.
 
 ## What this demonstrates
 
