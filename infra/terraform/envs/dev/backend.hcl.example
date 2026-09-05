@@ -1,0 +1,6 @@
+# terraform init -backend-config=backend.hcl
+bucket         = "your-terraform-state"
+key            = "zk2/dev/terraform.tfstate"
+region         = "eu-central-1"
+dynamodb_table = "terraform-locks"
+encrypt        = true
