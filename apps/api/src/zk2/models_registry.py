@@ -7,6 +7,7 @@ tables are known to SQLAlchemy before any query or FK is resolved.
 from __future__ import annotations
 
 # ruff: noqa: F401
+import zk2.ab.models
 import zk2.agents.models
 import zk2.auth.models
 import zk2.bots.models

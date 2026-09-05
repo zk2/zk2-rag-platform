@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # on Base.metadata and ForeignKey strings can resolve.
 import zk2.models_registry  # noqa: F401
 from zk2 import __version__
+from zk2.ab.router import router as ab_router
 from zk2.admin.router import router as admin_router
 from zk2.agents.router import router as agents_router
 from zk2.auth.router import public_router as access_router
@@ -97,6 +98,7 @@ def create_app() -> FastAPI:
     app.include_router(pipelines_router)
     app.include_router(agents_router)
     app.include_router(evals_router)
+    app.include_router(ab_router)
     app.include_router(chat_ws_router)
 
     return app

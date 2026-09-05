@@ -8,6 +8,7 @@ is a DAG like any other.
 
 from __future__ import annotations
 
+import json
 import re
 import time
 from collections.abc import AsyncIterator
@@ -19,6 +20,7 @@ import structlog
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from zk2.ab.service import Assignment, assign, running_experiment
 from zk2.auth.models import User
 from zk2.bots.models import Bot, BotSource, BotVersion, Conversation, Message
 from zk2.chat.events import StreamEvent
@@ -124,6 +126,7 @@ async def _record_usage(
     tokens_in: int,
     tokens_out: int,
     cost: Decimal | None,
+    assignment: Assignment | None = None,
 ) -> None:
     """Write a usage_event. No ORM model yet - the billing work adds one.
 
@@ -147,9 +150,27 @@ async def _record_usage(
             "tin": tokens_in,
             "tout": tokens_out,
             "cost": cost,
-            "meta": "{}" if cost is not None else '{"cost_unknown": true}',
+            # Experiment tags live in metadata so analytics can group by variant
+            "meta": json.dumps(
+                {
+                    **({} if cost is not None else {"cost_unknown": True}),
+                    **(
+                        {
+                            "experiment_id": str(assignment.experiment_id),
+                            "variant_id": str(assignment.variant_id),
+                        }
+                        if assignment is not None
+                        else {}
+                    ),
+                }
+            ),
         },
     )
+
+
+async def _dag_for_version(db: AsyncSession, version_id: int) -> DagSpec | None:
+    version = await db.scalar(select(PipelineVersion).where(PipelineVersion.id == version_id))
+    return DagSpec.model_validate(version.dag) if version is not None else None
 
 
 async def _dag_for_bot(db: AsyncSession, bot: Bot) -> DagSpec:
@@ -160,12 +181,23 @@ async def _dag_for_bot(db: AsyncSession, bot: Bot) -> DagSpec:
     if pipeline is None or pipeline.current_version_id is None:
         logger.warning("chat.pipeline_missing", bot_id=bot.id, pipeline_id=bot.pipeline_id)
         return DEFAULT_DAG
-    version = await db.scalar(
-        select(PipelineVersion).where(PipelineVersion.id == pipeline.current_version_id)
-    )
-    if version is None:
-        return DEFAULT_DAG
-    return DagSpec.model_validate(version.dag)
+    dag = await _dag_for_version(db, pipeline.current_version_id)
+    return dag if dag is not None else DEFAULT_DAG
+
+
+async def _resolve_experiment(
+    db: AsyncSession, *, bot: Bot, user: User | None, conversation_id: int | None
+) -> Assignment | None:
+    """Which variant this turn belongs to, if an experiment is running.
+
+    The subject is the user when there is one, and the conversation otherwise:
+    an anonymous visitor should still see one variant for the whole thread.
+    """
+    experiment = await running_experiment(db, bot_id=bot.id)
+    if experiment is None:
+        return None
+    subject = f"user:{user.id}" if user else f"conv:{conversation_id or 'new'}"
+    return await assign(db, experiment=experiment, subject=subject)
 
 
 async def stream_rag(
@@ -180,7 +212,13 @@ async def stream_rag(
     """Run one turn, yielding protocol events as they happen."""
     bot, version = await _load_bot(db, org_id=org_id, bot_id=bot_id)
     source_ids = await _bot_source_ids(db, bot_id=bot.id)
-    dag = await _dag_for_bot(db, bot)
+
+    assignment = await _resolve_experiment(db, bot=bot, user=user, conversation_id=conversation_id)
+    dag = None
+    if assignment is not None and assignment.pipeline_version_id is not None:
+        dag = await _dag_for_version(db, assignment.pipeline_version_id)
+    if dag is None:
+        dag = await _dag_for_bot(db, bot)
 
     turn = start_turn(
         "rag.turn",
@@ -191,6 +229,7 @@ async def stream_rag(
             "model": version.llm_model,
             "sources": len(source_ids),
             "pipeline_id": bot.pipeline_id or 0,
+            "variant": assignment.variant_name if assignment else "",
         },
     )
 
@@ -250,6 +289,7 @@ async def stream_rag(
         tokens_in=state.tokens_in,
         tokens_out=state.tokens_out,
         cost=state.cost_usd,
+        assignment=assignment,
     )
 
     yield StreamEvent(
@@ -260,6 +300,7 @@ async def stream_rag(
             "cost_usd": str(state.cost_usd) if state.cost_usd is not None else None,
             "latency_ms": state.latency_ms,
             "pipeline_ms": total_ms,
+            "variant": assignment.variant_name if assignment else None,
             "nodes": report.as_dict(),
             # Present only when Langfuse is configured: a link to this exact turn
             "trace_url": turn.trace_url,
