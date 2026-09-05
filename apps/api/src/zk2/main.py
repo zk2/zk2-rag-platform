@@ -23,10 +23,12 @@ from zk2.config import get_settings
 from zk2.core.arq import close_arq
 from zk2.core.db import dispose_engine, get_engine
 from zk2.core.errors import register_exception_handlers
+from zk2.core.global_rate_limit import global_rate_limit_middleware
 from zk2.core.logging import configure_logging
 from zk2.core.metrics_middleware import metrics_middleware
 from zk2.core.redis_client import close_redis
 from zk2.core.request_context import request_context_middleware
+from zk2.core.security_headers import security_headers_middleware
 from zk2.core.telemetry import instrument_sqlalchemy_engine, setup_telemetry
 from zk2.core.tracing import flush_traces
 from zk2.evals.router import router as evals_router
@@ -77,9 +79,12 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Registered last runs first: request context wraps the metrics middleware,
-    # so a metric emitted during the request already has the log context bound.
+    # Registered last runs first. Order matters: request context wraps
+    # everything so every log line is correlated, then the rate limit rejects
+    # before any work is done, then metrics, then headers on the way out.
+    app.middleware("http")(security_headers_middleware)
     app.middleware("http")(metrics_middleware)
+    app.middleware("http")(global_rate_limit_middleware)
     app.middleware("http")(request_context_middleware)
 
     register_exception_handlers(app)

@@ -41,6 +41,9 @@ class AppSettings(_Base):
     base_url: str = Field("http://localhost:3000", alias="APP_BASE_URL")
     api_base_url: str = Field("http://localhost:8000", alias="API_BASE_URL")
     log_level: str = Field("INFO", alias="LOG_LEVEL")
+    # Only true when something in front of us sets X-Forwarded-For, or a client
+    # can claim any address it likes and walk around per-IP limits
+    trust_proxy_headers: bool = Field(False, alias="TRUST_PROXY_HEADERS")
 
 
 class DatabaseSettings(_Base):
@@ -82,6 +85,11 @@ class AuthSettings(_Base):
     allowed_email_domains: str = Field("*", alias="ALLOWED_EMAIL_DOMAINS")
 
     rate_limit_login_per_min: int = Field(10, alias="RATE_LIMIT_LOGIN_PER_MIN")
+    # A ceiling for the whole API per source address; 0 disables it
+    rate_limit_global_per_min: int = Field(300, alias="RATE_LIMIT_GLOBAL_PER_MIN")
+    # Failed password attempts before an account or address is locked out
+    lockout_threshold: int = Field(10, alias="LOCKOUT_THRESHOLD", ge=1)
+    lockout_minutes: int = Field(15, alias="LOCKOUT_MINUTES", ge=1)
     rate_limit_access_request_per_hour_per_email: int = Field(
         1, alias="RATE_LIMIT_ACCESS_REQUEST_PER_HOUR_PER_EMAIL"
     )

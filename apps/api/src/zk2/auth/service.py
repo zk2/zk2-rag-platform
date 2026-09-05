@@ -14,6 +14,8 @@ from zk2.config import get_settings
 from zk2.core.audit import write_audit
 from zk2.core.email import send_templated
 from zk2.core.errors import UnauthorizedError
+from zk2.core.lockout import assert_not_locked, record_failure
+from zk2.core.lockout import clear as clear_lockout
 from zk2.core.rate_limit import hit as rate_limit_hit
 from zk2.core.security import (
     create_access_token,
@@ -53,8 +55,12 @@ async def authenticate_user(
         error_message="Too many login attempts from this IP",
     )
 
+    # Checked before the password so a locked account gives nothing away
+    await assert_not_locked(redis, email=email, ip=ip)
+
     user = await db.scalar(select(User).where(User.email == email))
     if user is None or user.password_hash is None or not user.is_active:
+        await record_failure(redis, email=email, ip=ip)
         await write_audit(
             db,
             action="auth.login.failed",
@@ -65,6 +71,7 @@ async def authenticate_user(
         raise UnauthorizedError("Invalid credentials")
 
     if not verify_password(password, user.password_hash):
+        await record_failure(redis, email=email, ip=ip)
         await write_audit(
             db,
             action="auth.login.failed",
@@ -75,6 +82,7 @@ async def authenticate_user(
         )
         raise UnauthorizedError("Invalid credentials")
 
+    await clear_lockout(redis, email=email, ip=ip)
     if needs_rehash(user.password_hash):
         user.password_hash = hash_password(password)
 
