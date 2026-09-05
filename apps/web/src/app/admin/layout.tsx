@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthHydrated, useAuthStore } from "@/lib/auth-store";
@@ -35,6 +36,15 @@ export default function AdminLayout({
           </Link>
           <Link href="/admin/invites" className="text-slate-700 hover:text-slate-900">
             Invites
+          </Link>
+          {/* Signing in as a super-admin lands here, and the admin pages are
+              only about who gets in - the documents, bots and pipelines live in
+              the workspace. Without this the trip is one-way. */}
+          <Link
+            href="/dashboard"
+            className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-2 text-slate-500 hover:text-slate-900"
+          >
+            <ArrowLeft className="size-4" /> Back to workspace
           </Link>
         </nav>
       </aside>
