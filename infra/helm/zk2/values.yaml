@@ -1,0 +1,128 @@
+# Defaults are deliberately conservative: one replica of everything, no
+# ingress, no autoscaling. Every environment turns on what it needs in its own
+# values file, so nothing is enabled by accident.
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  registry: ghcr.io
+  repository: zeka/zk2
+  # Set per environment; :latest in a manifest is how a rollback stops working
+  tag: ""
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+api:
+  replicas: 1
+  port: 8000
+  resources:
+    requests: { cpu: 200m, memory: 512Mi }
+    limits: { memory: 1Gi }
+  # Autoscaling on CPU: the API is latency-bound on LLM calls, so it holds
+  # connections rather than burning CPU - keep the target low
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 60
+
+web:
+  replicas: 1
+  port: 3000
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 512Mi }
+
+worker:
+  replicas: 1
+  resources:
+    requests: { cpu: 200m, memory: 1Gi }
+    limits: { memory: 2Gi }
+
+# Applied as a pre-upgrade hook so a new image never serves an old schema
+migrations:
+  enabled: true
+  backoffLimit: 1
+
+ingress:
+  enabled: false
+  className: nginx
+  host: zk2.example.com
+  tls:
+    enabled: true
+    secretName: zk2-tls
+  annotations: {}
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+networkPolicy:
+  # Default deny plus the egress the app actually needs: database, cache, DNS,
+  # and HTTPS to provider APIs
+  enabled: false
+  allowedEgressPorts: [443, 5432, 6379, 53]
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# Non-secret configuration. Secrets never live here - see externalSecret.
+config:
+  APP_ENV: prod
+  LOG_LEVEL: INFO
+  APP_BASE_URL: https://zk2.example.com
+  API_BASE_URL: https://zk2.example.com/api
+  DB_HOST: zk2-postgres
+  DB_PORT: "5432"
+  DB_NAME: zk2
+  DB_USER: zk2
+  REDIS_URL: redis://zk2-redis:6379/0
+  TRUST_PROXY_HEADERS: "true"
+  RATE_LIMIT_GLOBAL_PER_MIN: "300"
+  SYSTEM_KEY_TOKEN_LIMIT: "200000"
+  OTEL_EXPORTER_OTLP_ENDPOINT: ""
+  STORAGE_KIND: s3
+
+# Secrets come from a secret manager through External Secrets Operator, so no
+# credential is ever committed or passed through `helm install --set`.
+externalSecret:
+  enabled: false
+  secretStoreRef:
+    name: aws-secretsmanager
+    kind: ClusterSecretStore
+  refreshInterval: 1h
+  remoteKey: zk2/prod
+  # kubernetes key -> key in the remote secret
+  keys:
+    APP_SECRET_KEY: app_secret_key
+    DB_PASSWORD: db_password
+    EMAIL_PASSWORD: smtp_password
+    OPENAI_API_KEY: openai_api_key
+    ANTHROPIC_API_KEY: anthropic_api_key
+
+# When External Secrets is not in play, point at a Secret you created yourself
+existingSecret: ""
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

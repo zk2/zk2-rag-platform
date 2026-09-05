@@ -1,0 +1,30 @@
+config:
+  APP_ENV: prod
+  APP_BASE_URL: https://zk2.example.com
+  API_BASE_URL: https://zk2.example.com/api
+api:
+  replicas: 3
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 20
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { memory: 2Gi }
+web:
+  replicas: 3
+worker:
+  replicas: 2
+ingress:
+  enabled: true
+  host: zk2.example.com
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+networkPolicy:
+  enabled: true
+serviceMonitor:
+  enabled: true
+externalSecret:
+  enabled: true
+  remoteKey: zk2/prod

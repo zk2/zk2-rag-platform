@@ -1,0 +1,11 @@
+apiVersion: v2
+name: zk2
+description: Multi-tenant RAG platform - API, web, and ingest worker
+type: application
+version: 0.1.0
+appVersion: "0.7.0"
+keywords:
+  - rag
+  - llm
+maintainers:
+  - name: zeka

@@ -1,0 +1,12 @@
+{{ include "zk2.fullname" . }} deployed as release {{ .Release.Name }}.
+
+Image:      {{ include "zk2.image" . }}
+Migrations: {{ if .Values.migrations.enabled }}run as a pre-upgrade hook{{ else }}DISABLED - run `alembic upgrade head` yourself{{ end }}
+Secrets:    {{ if .Values.externalSecret.enabled }}synced by External Secrets from {{ .Values.externalSecret.remoteKey }}{{ else if .Values.existingSecret }}from the existing secret {{ .Values.existingSecret }}{{ else }}NONE - the app will not start without APP_SECRET_KEY and DB_PASSWORD{{ end }}
+
+{{- if .Values.ingress.enabled }}
+URL: https://{{ .Values.ingress.host }}
+{{- else }}
+No ingress. To reach the app:
+  kubectl port-forward svc/{{ include "zk2.fullname" . }}-web {{ .Values.web.port }}
+{{- end }}
