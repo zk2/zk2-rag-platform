@@ -28,6 +28,7 @@ from zk2.core.redis_client import close_redis
 from zk2.core.request_context import request_context_middleware
 from zk2.core.telemetry import instrument_sqlalchemy_engine, setup_telemetry
 from zk2.core.tracing import flush_traces
+from zk2.evals.router import router as evals_router
 from zk2.health import router as health_router
 from zk2.llm.router import models_router
 from zk2.llm.router import router as providers_router
@@ -95,6 +96,7 @@ def create_app() -> FastAPI:
     app.include_router(bots_router)
     app.include_router(pipelines_router)
     app.include_router(agents_router)
+    app.include_router(evals_router)
     app.include_router(chat_ws_router)
 
     return app

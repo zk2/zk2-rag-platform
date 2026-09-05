@@ -16,6 +16,7 @@ from zk2.config import get_settings
 from zk2.core.db import db_session, dispose_engine
 from zk2.core.logging import configure_logging
 from zk2.core.tracing import flush_traces
+from zk2.evals.runner import RunSettings, execute_run
 from zk2.sources.ingest import ingest_source as _ingest_source
 
 logger = structlog.get_logger()
@@ -24,6 +25,20 @@ logger = structlog.get_logger()
 async def ingest_source(_: dict[str, Any], source_id: int) -> None:
     async with db_session() as db:
         await _ingest_source(db, source_id=source_id)
+
+
+async def run_eval(_: dict[str, Any], run_id: int, settings: dict[str, Any]) -> None:
+    """Execute an evaluation run in the worker: it is long and costs money."""
+    async with db_session() as db:
+        await execute_run(
+            db,
+            run_id=run_id,
+            settings=RunSettings(
+                metrics=settings.get("metrics", []),
+                judge_provider=settings.get("judge_provider", "openai"),
+                judge_model=settings.get("judge_model", "gpt-4.1-mini"),
+            ),
+        )
 
 
 async def check_mcp_servers(_: dict[str, Any]) -> None:
@@ -61,6 +76,7 @@ class WorkerSettings:
     functions: ClassVar[list[Callable[..., Coroutine[Any, Any, None]]]] = [
         ingest_source,
         check_mcp_servers,
+        run_eval,
     ]
     cron_jobs: ClassVar[list[Any]] = [
         cron(check_mcp_servers, minute=set(range(0, 60, 5)), run_at_startup=False)  # type: ignore[arg-type]

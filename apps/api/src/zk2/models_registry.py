@@ -10,6 +10,7 @@ from __future__ import annotations
 import zk2.agents.models
 import zk2.auth.models
 import zk2.bots.models
+import zk2.evals.models
 import zk2.llm.models
 import zk2.orgs.models
 import zk2.pipelines.models
