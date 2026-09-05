@@ -17,3 +17,4 @@ and the alternatives that were actually considered.
 | [0009](0009-process-singletons.md) | Lazily initialised process-wide resource singletons | Accepted |
 | [0010](0010-metric-cardinality.md) | Metric labels exclude tenant identity | Accepted |
 | [0011](0011-pipeline-runtime.md) | A topological executor rather than LangGraph for pipelines | Accepted |
+| [0012](0012-agent-runtime.md) | LangGraph for the agent loop, with accounting kept in-project | Accepted |

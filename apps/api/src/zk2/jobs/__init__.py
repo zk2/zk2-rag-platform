@@ -6,8 +6,12 @@ from collections.abc import Callable, Coroutine
 from typing import Any, ClassVar
 
 import structlog
+from arq import cron
 from arq.connections import RedisSettings
+from sqlalchemy import select
 
+from zk2.agents.mcp_client import check_server
+from zk2.agents.models import McpServer
 from zk2.config import get_settings
 from zk2.core.db import db_session, dispose_engine
 from zk2.core.logging import configure_logging
@@ -20,6 +24,21 @@ logger = structlog.get_logger()
 async def ingest_source(_: dict[str, Any], source_id: int) -> None:
     async with db_session() as db:
         await _ingest_source(db, source_id=source_id)
+
+
+async def check_mcp_servers(_: dict[str, Any]) -> None:
+    """Periodic MCP health check.
+
+    Servers belong to other people and go down without telling us; the settings
+    page should say so before an agent turn discovers it.
+    """
+    async with db_session() as db:
+        servers = (
+            (await db.execute(select(McpServer).where(McpServer.enabled.is_(True)))).scalars().all()
+        )
+        for server in servers:
+            await check_server(db, server)
+    logger.info("arq.mcp_checked", servers=len(servers))
 
 
 async def on_startup(_: dict[str, Any]) -> None:
@@ -39,7 +58,13 @@ def _redis_settings() -> RedisSettings:
 
 
 class WorkerSettings:
-    functions: ClassVar[list[Callable[..., Coroutine[Any, Any, None]]]] = [ingest_source]
+    functions: ClassVar[list[Callable[..., Coroutine[Any, Any, None]]]] = [
+        ingest_source,
+        check_mcp_servers,
+    ]
+    cron_jobs: ClassVar[list[Any]] = [
+        cron(check_mcp_servers, minute=set(range(0, 60, 5)), run_at_startup=False)  # type: ignore[arg-type]
+    ]
     on_startup = on_startup
     on_shutdown = on_shutdown
     redis_settings = _redis_settings()

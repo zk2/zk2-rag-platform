@@ -166,6 +166,17 @@ class ChatSettings(_Base):
     ws_idle_timeout_seconds: float = Field(900.0, alias="WS_IDLE_TIMEOUT_SECONDS")
 
 
+class ToolSettings(_Base):
+    """Agent tools. A tool with no configuration is simply not offered."""
+
+    brave_search_api_key: SecretStr | None = Field(None, alias="BRAVE_SEARCH_API_KEY")
+    # A DSN for a database user with no write grants. Without it the SQL tool
+    # does not exist - the application's own credentials are never used for it.
+    readonly_database_url: SecretStr | None = Field(None, alias="READONLY_DATABASE_URL")
+    sql_timeout_ms: int = Field(5000, alias="SQL_TOOL_TIMEOUT_MS")
+    agent_max_steps: int = Field(8, alias="AGENT_MAX_STEPS", ge=1, le=50)
+
+
 class StorageSettings(_Base):
     kind: Literal["local", "s3"] = Field("local", alias="STORAGE_KIND")
     local_upload_dir: str = Field("./uploads", alias="LOCAL_UPLOAD_DIR")
@@ -195,6 +206,7 @@ class Settings:
         self.observability = ObservabilitySettings()
         self.ingest = IngestSettings()
         self.retrieval = RetrievalSettings()
+        self.tools = ToolSettings()
         self.chat = ChatSettings()
         self.storage = StorageSettings()
         self.super_admin = SuperAdminSeedSettings()

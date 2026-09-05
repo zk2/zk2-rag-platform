@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import zk2.models_registry  # noqa: F401
 from zk2 import __version__
 from zk2.admin.router import router as admin_router
+from zk2.agents.router import router as agents_router
 from zk2.auth.router import public_router as access_router
 from zk2.auth.router import router as auth_router
 from zk2.bots.router import router as bots_router
@@ -93,6 +94,7 @@ def create_app() -> FastAPI:
     app.include_router(sources_router)
     app.include_router(bots_router)
     app.include_router(pipelines_router)
+    app.include_router(agents_router)
     app.include_router(chat_ws_router)
 
     return app

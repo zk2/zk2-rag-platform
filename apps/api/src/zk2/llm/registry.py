@@ -49,6 +49,11 @@ async def _get_api_key(db: AsyncSession, org_id: int, provider: str) -> str | No
     return fallback.get_secret_value() if fallback else None
 
 
+async def require_api_key(db: AsyncSession, *, org_id: int, provider: str) -> str:
+    """Public accessor: the agent layer needs a key without building a provider."""
+    return await _require_key(db, org_id, provider)
+
+
 async def _require_key(db: AsyncSession, org_id: int, provider: str) -> str:
     key = await _get_api_key(db, org_id, provider)
     if not key:

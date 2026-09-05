@@ -52,6 +52,15 @@ dependencies = [
     "google-genai>=1.0.0",
     # LLM tracing
     "langfuse>=3.0.0",
+    # Agent orchestration
+    "langgraph>=1.2.0",
+    "langchain>=1.0.0",
+    "langchain-core>=1.0.0",
+    "langchain-openai>=1.0.0",
+    "langchain-anthropic>=1.0.0",
+    # Agent tools
+    "sympy>=1.13.0",
+    "mcp>=1.2.0",
     "tiktoken>=0.8.0",
     # Document loaders
     "pymupdf>=1.25.0",
@@ -143,6 +152,8 @@ ignore = [
 "src/zk2/core/storage.py" = ["PLW0603"]
 # The reranker model is loaded once per process, same pattern (ADR-0009)
 "src/zk2/retrieval/rerank.py" = ["PLW0603"]
+# Same lazy-singleton pattern for the read-only tool engine (ADR-0009)
+"src/zk2/agents/sql_sandbox.py" = ["PLW0603"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -165,6 +176,7 @@ module = [
     "docx.*",
     "openpyxl.*",
     "sentence_transformers.*",
+    "sympy.*",
 ]
 ignore_missing_imports = true
 

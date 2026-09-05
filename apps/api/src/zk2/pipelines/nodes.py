@@ -18,6 +18,7 @@ from typing import Any, ClassVar
 import structlog
 from pydantic import BaseModel, Field
 
+from zk2.agents.chat_models import build_chat_model
 from zk2.chat.events import StreamEvent
 from zk2.core.metrics import llm_errors_total, record_llm_call, record_retrieval
 from zk2.llm.base import LLMProvider
@@ -327,6 +328,79 @@ class Generate(Node):
         )
 
 
+class AgentConfig(BaseModel):
+    provider: str | None = Field(None, description="Overrides the bot's provider")
+    model: str | None = Field(None, description="Overrides the bot's model")
+    temperature: float | None = Field(None, ge=0, le=2)
+    max_tokens: int | None = Field(None, ge=1, le=128_000)
+    system_prompt: str | None = Field(None, max_length=20_000)
+    tools: list[str] = Field(
+        default_factory=list, description="Tool names to offer; empty means all available"
+    )
+    max_steps: int = Field(8, ge=1, le=30, description="Tool-call rounds before giving up")
+    use_context: bool = Field(True, description="Include retrieved passages in the prompt")
+
+
+class Agent(Node):
+    type = "agent"
+    title = "Agent"
+    description = "Model with tools: it decides what to call and when to answer."
+    config_model = AgentConfig
+
+    async def run(
+        self, state: PipelineState, ctx: NodeContext, config: AgentConfig
+    ) -> AsyncIterator[StreamEvent]:
+        from zk2.agents.graph import AgentOutcome, stream_agent  # noqa: PLC0415  (heavy import)
+        from zk2.agents.registry import tools_for_org  # noqa: PLC0415
+
+        provider = config.provider or ctx.version.llm_provider
+        model = config.model or ctx.version.llm_model
+        temperature = (
+            config.temperature if config.temperature is not None else ctx.version.temperature
+        )
+
+        prompt = (
+            config.system_prompt or ctx.version.system_prompt or "You are a helpful assistant."
+        ).strip()
+        if config.use_context and state.context_parts:
+            prompt += (
+                "\n\nRetrieved passages are below. Prefer them over your own knowledge, "
+                "and use tools when they cannot answer the question.\n"
+                + CITATION_INSTRUCTION
+                + "\n\n----- CONTEXT -----\n"
+                + "\n\n".join(state.context_parts)
+            )
+
+        tools = await tools_for_org(ctx.db, org_id=ctx.org_id, names=config.tools or None)
+        chat_model = await build_chat_model(
+            ctx.db,
+            org_id=ctx.org_id,
+            provider=provider,
+            model=model,
+            temperature=temperature,
+            max_tokens=config.max_tokens,
+        )
+
+        async for item in stream_agent(
+            chat_model=chat_model,
+            tools=tools,
+            system_prompt=prompt,
+            question=state.query,
+            provider=provider,
+            model=model,
+            max_steps=config.max_steps,
+            trace=ctx.trace,
+        ):
+            if isinstance(item, AgentOutcome):
+                state.answer = item.answer
+                state.tokens_in = item.tokens_in
+                state.tokens_out = item.tokens_out
+                state.cost_usd = item.cost_usd
+                state.failed = item.failed
+                continue
+            yield item
+
+
 @dataclass(frozen=True, slots=True)
 class NodeType:
     """What the editor palette needs to render a node type."""
@@ -344,6 +418,7 @@ _NODES: tuple[Node, ...] = (
     Rerank(),
     ContextBuilder(),
     Generate(),
+    Agent(),
 )
 
 REGISTRY: dict[str, Node] = {node.type: node for node in _NODES}
