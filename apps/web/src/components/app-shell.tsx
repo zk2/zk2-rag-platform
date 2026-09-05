@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAuthHydrated, useAuthStore } from "@/lib/auth-store";
+import { ErrorBanner } from "@/components/error-banner";
 import { cn } from "@/lib/utils";
 import {
   FolderTree,
@@ -111,7 +112,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </aside>
-      <main className="flex-1 overflow-auto">{children}</main>
+      <main className="flex-1 overflow-auto">
+        <ErrorBanner />
+        {children}
+      </main>
     </div>
   );
 }

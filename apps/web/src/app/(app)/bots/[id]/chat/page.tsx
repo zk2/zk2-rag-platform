@@ -4,6 +4,7 @@ import { use, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
+import { refreshSession } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth-store";
 import { wsUrl } from "@/lib/ws";
 
@@ -43,11 +44,16 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
   const [error, setError] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  // The socket authenticates with the same short-lived token the REST client
+  // uses, and this page makes no REST calls to keep it fresh. One retry is
+  // enough to tell a stale token from a session that is really over.
+  const retriedAuth = useRef(false);
 
   useEffect(() => {
     if (!accessToken || !currentOrgId) return;
     const ws = new WebSocket(wsUrl(`/ws/chat/${botId}`));
     wsRef.current = ws;
+    let ready = false;
 
     ws.onopen = () => {
       ws.send(
@@ -58,6 +64,8 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
       const data = JSON.parse(ev.data);
       switch (data.type) {
         case "ready":
+          ready = true;
+          retriedAuth.current = false;
           setConnected(true);
           break;
         case "conversation":
@@ -153,7 +161,16 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
           break;
       }
     };
-    ws.onclose = () => setConnected(false);
+    ws.onclose = () => {
+      setConnected(false);
+      // Closed before it ever said "ready": the token was refused. Refresh
+      // once - the new token re-runs this effect and reconnects.
+      if (ready || retriedAuth.current) return;
+      retriedAuth.current = true;
+      void refreshSession().then(({ token, over }) => {
+        if (!token && over) setError("Session expired. Sign in again.");
+      });
+    };
     ws.onerror = () => setError("WebSocket error");
     return () => ws.close();
   }, [accessToken, botId, currentOrgId]);

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthHydrated, useAuthStore } from "@/lib/auth-store";
+import { ErrorBanner } from "@/components/error-banner";
 
 export default function AdminLayout({
   children,
@@ -37,7 +38,10 @@ export default function AdminLayout({
           </Link>
         </nav>
       </aside>
-      <main className="flex-1 p-8">{children}</main>
+      <main className="flex-1">
+        <ErrorBanner />
+        <div className="p-8">{children}</div>
+      </main>
     </div>
   );
 }
