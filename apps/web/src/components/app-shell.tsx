@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
-import { useAuthStore } from "@/lib/auth-store";
+import { useAuthHydrated, useAuthStore } from "@/lib/auth-store";
 import { cn } from "@/lib/utils";
 import {
   FolderTree,
@@ -32,12 +32,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { user, memberships, currentOrgId, setCurrentOrg, clear } = useAuthStore();
+  const hydrated = useAuthHydrated();
 
   useEffect(() => {
-    if (!user) router.replace("/login");
-  }, [user, router]);
+    // Two traps here. Before hydration, "no user" only means the persisted
+    // session has not been read back yet. And on the first client render React
+    // replays the server snapshot, where the store is always empty - so the
+    // decision reads the store directly rather than that render's value.
+    if (!hydrated) return;
+    if (!useAuthStore.getState().user) router.replace("/login");
+  }, [hydrated, user, router]);
 
-  if (!user) return null;
+  if (!hydrated || !user) return null;
   const currentOrg = memberships.find((m) => m.org_id === currentOrgId);
 
   return (

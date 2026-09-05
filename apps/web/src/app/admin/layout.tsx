@@ -3,20 +3,25 @@
 import Link from "next/link";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useAuthStore } from "@/lib/auth-store";
+import { useAuthHydrated, useAuthStore } from "@/lib/auth-store";
 
 export default function AdminLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
+  const hydrated = useAuthHydrated();
 
   useEffect(() => {
-    if (!user) router.replace("/login");
-    else if (!user.is_super_admin) router.replace("/dashboard");
-  }, [user, router]);
+    // Same reason as the app shell: before hydration "no user" only means the
+    // persisted session has not been read back yet
+    if (!hydrated) return;
+    const current = useAuthStore.getState().user;
+    if (!current) router.replace("/login");
+    else if (!current.is_super_admin) router.replace("/dashboard");
+  }, [hydrated, user, router]);
 
-  if (!user || !user.is_super_admin) return null;
+  if (!hydrated || !user || !user.is_super_admin) return null;
 
   return (
     <div className="min-h-screen flex bg-slate-50">

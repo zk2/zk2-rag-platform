@@ -107,3 +107,74 @@ jobs:
       - name: Bandit
         working-directory: apps/api
         run: uv run bandit -r src -ll
+
+  e2e:
+    name: Web — Playwright e2e
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: zk2
+          POSTGRES_USER: zk2
+          POSTGRES_PASSWORD: e2e-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U zk2" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      # A throwaway database with throwaway credentials: nothing here is a secret
+      APP_ENV: test
+      APP_SECRET_KEY: e2e-secret-key-at-least-32-characters-long
+      DB_HOST: localhost
+      DB_PASSWORD: e2e-password
+      REDIS_URL: redis://localhost:6379/0
+      SUPER_ADMIN_EMAIL: e2e@example.com
+      SUPER_ADMIN_PASSWORD: E2ePassword123!
+      E2E_EMAIL: e2e@example.com
+      E2E_PASSWORD: E2ePassword123!
+      API_BASE_URL: http://127.0.0.1:8000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.4"
+          enable-cache: true
+      - run: uv python install 3.12
+      - name: Install api deps
+        working-directory: apps/api
+        run: uv sync --extra dev
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Migrate and seed
+        working-directory: apps/api
+        run: |
+          uv run alembic upgrade head
+          uv run python -m scripts.seed
+      - name: Start the API
+        working-directory: apps/api
+        run: |
+          uv run uvicorn zk2.main:app --port 8000 --host 127.0.0.1 &
+          for _ in $(seq 1 60); do curl -sf http://127.0.0.1:8000/health && break; sleep 1; done
+      - name: Install Playwright browser
+        run: pnpm --filter web exec playwright install --with-deps chromium
+      - name: Run e2e
+        run: pnpm --filter web e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report
+          retention-days: 7

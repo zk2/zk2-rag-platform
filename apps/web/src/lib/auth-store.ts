@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
@@ -60,3 +61,27 @@ export const useAuthStore = create<State & Actions>()(
     { name: "zk2-auth" },
   ),
 );
+
+/**
+ * Whether the persisted store has been read back from localStorage yet.
+ *
+ * On a full page load zustand hydrates asynchronously, so the first render
+ * always sees a logged-out state. Anything that redirects on "no user" has to
+ * wait for this, or a signed-in visitor is bounced to /login every time they
+ * reload a page.
+ */
+export function useAuthHydrated(): boolean {
+  // The persist API is absent while Next prerenders on the server, where there
+  // is no storage to hydrate from - reading it unguarded fails the build
+  const [hydrated, setHydrated] = useState(() => useAuthStore.persist?.hasHydrated() ?? false);
+
+  useEffect(() => {
+    const store = useAuthStore.persist;
+    if (!store) return;
+    const unsubscribe = store.onFinishHydration(() => setHydrated(true));
+    setHydrated(store.hasHydrated());
+    return unsubscribe;
+  }, []);
+
+  return hydrated;
+}
