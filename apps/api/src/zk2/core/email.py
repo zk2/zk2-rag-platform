@@ -1,4 +1,4 @@
-"""Email sending via SMTP (Mailgun in prod, MailHog in dev)."""
+"""Email sending via SMTP (Resend in prod, MailHog in dev)."""
 
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ async def send_email(to: str, *, subject: str, html: str) -> None:
         msg,
         hostname=settings.mail.smtp_server,
         port=settings.mail.smtp_port,
-        username=settings.mail.sender if settings.mail.password else None,
+        username=settings.mail.smtp_username if settings.mail.password else None,
         password=(settings.mail.password.get_secret_value() if settings.mail.password else None),
         use_tls=settings.mail.smtp_use_ssl,
     )

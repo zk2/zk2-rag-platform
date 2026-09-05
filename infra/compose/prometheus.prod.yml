@@ -1,0 +1,11 @@
+# Production scrape config. Unlike the development one, the API is a service on
+# this network rather than a process on the host.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: zk2-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8000"]

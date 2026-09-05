@@ -23,7 +23,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-install-project --no-dev || \
     uv sync --no-install-project --no-dev
 
-# App source
+# App source. README.md comes along because pyproject declares it as the
+# package readme, and hatchling refuses to build the wheel without it.
+COPY apps/api/README.md /app/README.md
 COPY apps/api/src /app/src
 COPY apps/api/alembic /app/alembic
 COPY apps/api/alembic.ini /app/alembic.ini
@@ -48,7 +50,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY --from=builder /app /app
-RUN chown -R app:app /app
+# These are mount points for named volumes shared with the worker. Creating
+# them here means Docker seeds the volume with an app-owned directory - created
+# on the fly they would belong to root, and the unprivileged process could not
+# write an upload into them.
+RUN mkdir -p /app/uploads /app/.cache/hf \
+    && chown -R app:app /app
 
 USER app
 

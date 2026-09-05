@@ -9,3 +9,4 @@ for whoever wrote the code.
 | [backup-restore.md](backup-restore.md) | Data needs restoring, or you are verifying that it could be |
 | [scaling.md](scaling.md) | It is slow, or it is about to be |
 | [key-rotation.md](key-rotation.md) | A credential has to change, urgently or on schedule |
+| [deploy-compose.md](deploy-compose.md) | Putting the whole stack on one host, or updating what is there |

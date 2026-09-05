@@ -1,0 +1,244 @@
+# Production stack for a single host.
+#
+# Run it from the repository root so that both the variable file and the build
+# context are where this file expects them:
+#
+#   docker compose --env-file .env.prod -f infra/compose/docker-compose.prod.yml up -d
+#
+# or through the `prod-*` targets in the Makefile, which do exactly that.
+#
+# Only the reverse proxy publishes a port to the world; the observability UIs
+# bind to loopback, so they are reached over an SSH tunnel rather than being
+# put on the internet. Postgres and Redis publish nothing at all.
+
+name: zk2
+
+x-app-env: &app-env
+  # Everything the application reads comes from this file; the per-service
+  # `environment:` blocks below only override what is specific to running
+  # inside compose (service names instead of localhost).
+  env_file:
+    - ../../.env.prod
+
+x-api-image: &api-image
+  build:
+    context: ../..
+    dockerfile: infra/docker/api.Dockerfile
+
+x-api-runtime-env: &api-runtime-env
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  REDIS_URL: redis://redis:6379/0
+  # Named volumes, shared by api and worker: the API writes an upload, the
+  # worker reads the same bytes back when it indexes the document.
+  LOCAL_UPLOAD_DIR: /app/uploads
+  HF_HUB_CACHE: /app/.cache/hf
+  # Caddy sets X-Forwarded-For, so per-IP limits see the real client
+  TRUST_PROXY_HEADERS: "true"
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    shm_size: "1g"
+    environment:
+      POSTGRES_DB: ${DB_NAME:-zk2}
+      POSTGRES_USER: ${DB_USER:-zk2}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    command:
+      - postgres
+      - -c
+      - maintenance_work_mem=512MB
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - max_connections=100
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-zk2} -d ${DB_NAME:-zk2}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Queue state should survive a restart of the host: an eval run that was
+    # queued and then lost is a support ticket nobody can explain.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # One-shot: every `up` runs migrations to head before api and worker start.
+  migrate:
+    <<: [*api-image, *app-env]
+    image: zk2-api:local
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      <<: *api-runtime-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: [*api-image, *app-env]
+    image: zk2-api:local
+    restart: unless-stopped
+    environment:
+      <<: *api-runtime-env
+    volumes:
+      - uploads:/app/uploads
+      - hf_cache:/app/.cache/hf
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    <<: [*api-image, *app-env]
+    image: zk2-api:local
+    restart: unless-stopped
+    command: ["arq", "zk2.jobs.WorkerSettings"]
+    # The image's healthcheck curls the API's own port, which the worker does
+    # not listen on: inherited unchanged it would report unhealthy forever.
+    healthcheck:
+      disable: true
+    environment:
+      <<: *api-runtime-env
+      OTEL_SERVICE_NAME: zk2-worker
+    volumes:
+      - uploads:/app/uploads
+      - hf_cache:/app/.cache/hf
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: ../..
+      dockerfile: infra/docker/web.Dockerfile
+    image: zk2-web:local
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      # Server-side rewrite target for /api/*. The browser never sees this
+      # address - it talks to Caddy, which reaches the API the same way.
+      API_BASE_URL: http://api:8000
+    depends_on:
+      - api
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      # The only port that leaves this stack. Behind the host's own proxy,
+      # ${HTTP_BIND} can be narrowed to the address that proxy comes from.
+      - "${HTTP_BIND:-0.0.0.0}:${HTTP_PORT:-80}:80"
+    volumes:
+      # `z` relabels for SELinux, which AlmaLinux and friends enforce by
+      # default; on a host without SELinux Docker ignores it.
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro,z
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - web
+
+  # ── Observability (profile: obs) ────────────────────────────
+  # `--profile obs` brings these up; without it the stack is application only.
+
+  prometheus:
+    image: prom/prometheus:latest
+    profiles: [obs]
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.prod.yml:/etc/prometheus/prometheus.yml:ro,z
+      - prometheus_data:/prometheus
+    ports:
+      - "${OBS_BIND:-127.0.0.1}:9090:9090"
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    profiles: [obs]
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
+      # Loopback-bound and reached over a tunnel, but anonymous read on a
+      # dashboard that names hosts and queues is still a gift to whoever
+      # finds the tunnel open.
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    ports:
+      - "${OBS_BIND:-127.0.0.1}:3001:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro,z
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro,z
+    depends_on:
+      - prometheus
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    profiles: [obs]
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "${OBS_BIND:-127.0.0.1}:16686:16686"
+
+  langfuse-db:
+    image: postgres:16-alpine
+    profiles: [obs]
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: langfuse
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD:?LANGFUSE_DB_PASSWORD is required}
+    volumes:
+      - langfuse_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  langfuse:
+    image: langfuse/langfuse:2
+    profiles: [obs]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://langfuse:${LANGFUSE_DB_PASSWORD:?LANGFUSE_DB_PASSWORD is required}@langfuse-db:5432/langfuse
+      NEXTAUTH_URL: ${LANGFUSE_PUBLIC_URL:-http://localhost:3030}
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:?LANGFUSE_NEXTAUTH_SECRET is required}
+      SALT: ${LANGFUSE_SALT:?LANGFUSE_SALT is required}
+      TELEMETRY_ENABLED: "false"
+    ports:
+      - "${OBS_BIND:-127.0.0.1}:3030:3000"
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  uploads:
+  hf_cache:
+  caddy_data:
+  caddy_config:
+  prometheus_data:
+  grafana_data:
+  langfuse_data:

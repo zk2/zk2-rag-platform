@@ -162,6 +162,54 @@ k8s-manifests: ## Re-render infra/k8s from the chart
 tf-validate: ## Validate the Terraform example
 	cd infra/terraform/envs/dev && terraform init -backend=false -input=false >/dev/null && terraform validate
 
+## ── Production (single host, compose) ────────────────────────
+
+# The whole stack on one machine: postgres, redis, api, worker, web and the
+# Caddy that fronts them. Observability rides along in the `obs` profile -
+# drop it with `make prod-up PROD_PROFILES=`.
+PROD_PROFILES ?= --profile obs
+PROD_COMPOSE := docker compose --env-file .env.prod -f infra/compose/docker-compose.prod.yml $(PROD_PROFILES)
+
+.PHONY: prod-config
+prod-config: ## Validate the production compose file and its variables
+	$(PROD_COMPOSE) config -q && echo "compose config is valid"
+
+.PHONY: prod-build
+prod-build: ## Build the api and web images on this host
+	$(PROD_COMPOSE) build
+
+.PHONY: prod-up
+prod-up: ## Start the production stack (migrations run first)
+	$(PROD_COMPOSE) up -d
+
+.PHONY: prod-down
+prod-down: ## Stop the production stack, keeping volumes
+	$(PROD_COMPOSE) down
+
+.PHONY: prod-ps
+prod-ps: ## Show what is running
+	$(PROD_COMPOSE) ps
+
+.PHONY: prod-logs
+prod-logs: ## Follow logs (make prod-logs SERVICE=api for one service)
+	$(PROD_COMPOSE) logs -f --tail=200 $(SERVICE)
+
+.PHONY: prod-migrate
+prod-migrate: ## Apply migrations without restarting anything
+	$(PROD_COMPOSE) run --rm migrate
+
+.PHONY: prod-seed
+prod-seed: ## Seed the super-admin and a workspace to sign into
+	$(PROD_COMPOSE) run --rm api python -m scripts.seed
+
+.PHONY: prod-seed-demo
+prod-seed-demo: ## Add demo documents, a bot, a pipeline and a golden set
+	$(PROD_COMPOSE) run --rm api python -m scripts.seed_demo
+
+.PHONY: prod-deploy
+prod-deploy: prod-build prod-up ## Rebuild the images and roll the stack over
+	$(PROD_COMPOSE) ps
+
 ## ── Clean ────────────────────────────────────────────────────
 
 .PHONY: clean

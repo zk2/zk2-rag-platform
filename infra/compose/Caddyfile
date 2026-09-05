@@ -1,0 +1,45 @@
+# Reverse proxy for the single-host production stack.
+#
+# One origin serves everything: the browser app at /, the API under /api, and
+# the chat WebSocket through the same /api prefix. Sharing an origin is what
+# lets the app's CSP stay at `connect-src 'self'` and keeps the API off the
+# public network on its own port.
+#
+# TLS is terminated by the host's proxy in front of this container, so Caddy
+# speaks plain HTTP here and never asks for a certificate.
+
+{
+	admin off
+	auto_https off
+	servers {
+		# Trust the address the proxy in front reports, so the API's per-IP
+		# rate limits see the client rather than the proxy.
+		trusted_proxies static private_ranges
+	}
+}
+
+:80 {
+	encode gzip
+
+	log {
+		output stdout
+		format console
+	}
+
+	# /metrics is a Prometheus scrape target, and Prometheus reaches the API
+	# directly inside this network. Nothing outside has any business there.
+	handle /api/metrics {
+		respond "Not found" 404
+	}
+
+	# The API is mounted under /api and told so via root_path, so the links it
+	# generates (docs, openapi.json) keep the prefix the browser used.
+	handle /api/* {
+		uri strip_prefix /api
+		reverse_proxy api:8000
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}

@@ -14,15 +14,20 @@ from typing import Literal
 from pydantic import Field, PostgresDsn, RedisDsn, SecretStr, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# config.py is at apps/api/src/zk2/config.py — repo root is 4 parents up
-_REPO_ROOT = Path(__file__).resolve().parents[4]
-_DOTENV = _REPO_ROOT / ".env"
+# config.py is at apps/api/src/zk2/config.py — repo root is 4 parents up.
+# The container installs the source at /app/src/zk2, where those parents do not
+# exist and no .env is shipped: there the process is configured by the
+# environment alone, so the absence of a repo root is normal, not an error.
+_CONFIG_PARENTS = Path(__file__).resolve().parents
+_DOTENV = _CONFIG_PARENTS[4] / ".env" if len(_CONFIG_PARENTS) > 4 else None
 
 # Tests must not inherit the developer's .env: it carries real provider keys,
 # SMTP credentials and an OTLP endpoint. Set ZK2_DISABLE_DOTENV=1 to make the
 # process read environment variables only.
 _DOTENV_DISABLED = os.getenv("ZK2_DISABLE_DOTENV", "").lower() in {"1", "true", "yes"}
-_ENV_FILE = str(_DOTENV) if (_DOTENV.exists() and not _DOTENV_DISABLED) else None
+_ENV_FILE = (
+    str(_DOTENV) if (_DOTENV is not None and _DOTENV.exists() and not _DOTENV_DISABLED) else None
+)
 
 
 class _Base(BaseSettings):
@@ -118,6 +123,14 @@ class MailSettings(_Base):
     smtp_use_ssl: bool = Field(True, alias="SMTP_USE_SSL")
     sender: str = Field("zk2@mailgun.zeka.kiev.ua", alias="EMAIL_SENDER")
     password: SecretStr | None = Field(None, alias="EMAIL_PASSWORD")
+    # Most providers authenticate as the sender address; Resend wants the
+    # literal user "resend" with the API key as the password. Unset means
+    # "same as the sender", which is what Mailgun and MailHog expect.
+    username: str | None = Field(None, alias="SMTP_USERNAME")
+
+    @property
+    def smtp_username(self) -> str:
+        return self.username or self.sender
 
 
 class LLMSettings(_Base):

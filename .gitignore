@@ -32,6 +32,8 @@ dist/
 .env
 .env.local
 .env.*.local
+# Real deployment secrets. Only the .example files belong in git.
+.env.prod
 !.env.example
 
 # IDE
