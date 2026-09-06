@@ -1,9 +1,25 @@
+import type { Page } from "@playwright/test";
 import { expect, test } from "./fixtures";
+
+/**
+ * Upload the way a person does: the File tab, then the button that opens the
+ * picker. The input itself is hidden, which is also why setInputFiles on it
+ * cannot work.
+ */
+async function upload(
+  page: Page,
+  file: { name: string; mimeType: string; buffer: Buffer },
+): Promise<void> {
+  await page.getByRole("button", { name: "File", exact: true }).click();
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "Choose file" }).click();
+  await (await chooser).setFiles(file);
+}
 
 test.describe("workspace", () => {
   test("a document can be uploaded and appears in the tree", async ({ signedIn: page }) => {
     await page.goto("/sources");
-    await page.setInputFiles('input[type="file"]', {
+    await upload(page, {
       name: "e2e-handbook.txt",
       mimeType: "text/plain",
       buffer: Buffer.from("Employees accrue 20 vacation days per year."),
@@ -14,7 +30,7 @@ test.describe("workspace", () => {
 
   test("an unsupported file is refused with a reason", async ({ signedIn: page }) => {
     await page.goto("/sources");
-    await page.setInputFiles('input[type="file"]', {
+    await upload(page, {
       name: "payload.exe",
       mimeType: "application/octet-stream",
       buffer: Buffer.from("MZ"),
