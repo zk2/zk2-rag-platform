@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
+import { useAuthStore } from "@/lib/auth-store";
 import { Activity, BarChart3, ExternalLink, Radar, ScrollText } from "lucide-react";
 
 type ModelUsage = {
@@ -41,9 +42,13 @@ export default function ObservabilityPage() {
     queryKey: ["usage", days],
     queryFn: () => api.get<UsageSummary>(`/observability/usage?days=${days}`),
   });
+  // Operator tooling, and the endpoint is super-admin only: asking for it as a
+  // tenant would be a 403 in the error banner rather than a hidden card.
+  const isSuperAdmin = useAuthStore((s) => s.user?.is_super_admin ?? false);
   const links = useQuery({
     queryKey: ["observability-links"],
     queryFn: () => api.get<Links>("/observability/links"),
+    enabled: isSuperAdmin,
   });
 
   return (
@@ -51,7 +56,8 @@ export default function ObservabilityPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Observability</h1>
         <p className="text-slate-500 text-sm mt-1">
-          Spend and traffic for this organization, and where the deeper tooling lives.
+          Spend and traffic for this organization
+          {isSuperAdmin ? ", and where the deeper tooling lives" : ""}.
         </p>
       </div>
 
@@ -74,7 +80,7 @@ export default function ObservabilityPage() {
 
       <UsagePanel usage={usage.data} loading={usage.isLoading} />
       <ModelTable rows={usage.data?.by_model ?? []} />
-      <ToolLinks links={links.data} />
+      {isSuperAdmin && <ToolLinks links={links.data} />}
     </div>
   );
 }

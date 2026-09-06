@@ -121,8 +121,16 @@ async def test_usage_summary_counts_calls_with_unknown_price(
     assert body["calls_without_price"] == 1
 
 
-async def test_links_describe_the_deployment(owner_client: AsyncClient) -> None:
-    resp = await owner_client.get("/observability/links")
+async def test_links_describe_the_deployment(
+    client: AsyncClient, super_admin: dict[str, Any]
+) -> None:
+    login = await client.post(
+        "/auth/login", json={"email": super_admin["email"], "password": super_admin["password"]}
+    )
+    resp = await client.get(
+        "/observability/links",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
     assert resp.status_code == 200
     body = resp.json()
     assert set(body) == {
@@ -136,3 +144,9 @@ async def test_links_describe_the_deployment(owner_client: AsyncClient) -> None:
     # Tests run without an OTLP endpoint or Sentry DSN
     assert body["tracing_enabled"] is False
     assert body["sentry_enabled"] is False
+
+
+async def test_links_are_not_a_tenant_facing_endpoint(owner_client: AsyncClient) -> None:
+    """An org owner reaches none of those tools and does not need their addresses."""
+    resp = await owner_client.get("/observability/links")
+    assert resp.status_code == 403

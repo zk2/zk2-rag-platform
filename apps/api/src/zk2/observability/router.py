@@ -18,7 +18,8 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from zk2.auth.rbac import OrgContext, require_org
+from zk2.auth.models import User
+from zk2.auth.rbac import OrgContext, require_org, require_super_admin
 from zk2.config import get_settings
 from zk2.core.deps import get_db_dep
 from zk2.core.errors import ForbiddenError, NotFoundError
@@ -150,9 +151,17 @@ async def key_allowance(
 
 @router.get("/observability/links", response_model=ObservabilityLinks)
 async def observability_links(
-    _ctx: Annotated[OrgContext, Depends(require_org("viewer"))],
+    _user: Annotated[User, Depends(require_super_admin())],
 ) -> ObservabilityLinks:
-    """Where traces, dashboards and errors live for this deployment."""
+    """Where traces, dashboards and errors live for this deployment.
+
+    Operator-facing, so super-admin only. A member of a tenant organization can
+    reach none of these: Grafana wants a password they do not have, Jaeger and
+    Prometheus are loopback-bound, and Langfuse holds every organization's
+    traces in one project - prompts and retrieved chunks included. Listing the
+    addresses would describe the deployment's insides to someone who cannot use
+    any of them.
+    """
     settings = get_settings().observability
     return ObservabilityLinks(
         grafana_url=settings.grafana_url,
