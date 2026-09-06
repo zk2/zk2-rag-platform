@@ -161,3 +161,64 @@ async def test_reindex_updates_the_language(db: AsyncSession, org_owner: dict[st
     await db.refresh(stored)
     assert stored.lang == "en"
     assert stored.lang_config == "english"
+
+
+async def test_a_question_finds_the_document_that_holds_the_answer(
+    db: AsyncSession, org_owner: dict[str, Any]
+) -> None:
+    """Nobody types keywords. They type a question, and it has to work.
+
+    `plainto_tsquery` joins every word with AND, so this query demanded that
+    one chunk contain "чем", "по" and "возможностям" as well as the two tool
+    names. It matched nothing - as did every other natural-language question
+    ever asked of this deployment. Lexical retrieval returned an empty list
+    into fusion and hybrid search was dense-only without anyone noticing.
+    """
+    org_id = org_owner["org_id"]
+    source = await _ingest(
+        db,
+        org_id=org_id,
+        name="tools.txt",
+        body="Langfuse does tracing, prompts, evals and cost. LangSmith adds datasets.",
+    )
+    await _ingest(db, org_id=org_id, name="other.txt", body="Unrelated notes about deployment.")
+
+    hits = await bm25_search(
+        db,
+        org_id=org_id,
+        source_ids=[source.id],
+        query="Чем Langfuse отличается от LangSmith по возможностям?",
+        k=5,
+    )
+    assert [h.source_name for h in hits] == ["tools.txt"]
+
+
+async def test_a_stopword_of_another_language_does_not_drag_in_everything(
+    db: AsyncSession, org_owner: dict[str, Any]
+) -> None:
+    """A stopword is only stripped by its own language's configuration.
+
+    Under `english`, the Russian "чем" and "по" survive as search terms and
+    match nearly every chunk, burying the one that holds the rare word. So a
+    word any configured language calls a stopword is dropped before the query
+    is built.
+    """
+    org_id = org_owner["org_id"]
+    await _ingest(
+        db,
+        org_id=org_id,
+        name="noise.txt",
+        body="Notes about чем and по and от, repeated: чем по от чем по от.",
+    )
+    wanted = await _ingest(
+        db, org_id=org_id, name="wanted.txt", body="The LangSmith integration guide."
+    )
+
+    hits = await bm25_search(
+        db,
+        org_id=org_id,
+        source_ids=[wanted.id],
+        query="Чем LangSmith отличается по возможностям?",
+        k=5,
+    )
+    assert hits[0].source_name == "wanted.txt"
