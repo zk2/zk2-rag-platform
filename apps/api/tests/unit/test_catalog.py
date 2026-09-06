@@ -6,7 +6,8 @@ from decimal import Decimal
 
 import pytest
 
-from zk2.llm.catalog import embedding_cost, estimate_cost, get_catalog
+from zk2.llm.catalog import EmbeddingModel, embedding_cost, estimate_cost, get_catalog
+from zk2.llm.registry import embedding_model_support
 
 pytestmark = pytest.mark.unit
 
@@ -71,3 +72,31 @@ def test_embedding_cost_and_dimensions() -> None:
 
 def test_unknown_embedding_cost_is_none() -> None:
     assert embedding_cost("mystery-embed", tokens=100) is None
+
+
+def test_a_truncating_model_is_usable_whatever_its_native_width() -> None:
+    """3072 native, 1536 stored: the dimensions parameter closes the gap."""
+    model = get_catalog().embedding_model("text-embedding-3-large")
+    assert model is not None
+    assert embedding_model_support(model) is None
+
+
+def test_a_fixed_width_model_that_does_not_match_the_index_is_refused() -> None:
+    """Not in the yaml today - the check is what keeps it out of the picker."""
+    model = EmbeddingModel(
+        id="fixed-1024",
+        provider="openai",
+        display_name="Fixed 1024",
+        native_dimensions=1024,
+        supports_dimensions=False,
+    )
+    reason = embedding_model_support(model)
+    assert reason is not None
+    assert "1024" in reason and "1536" in reason
+
+
+def test_a_provider_without_an_embedding_adapter_is_refused() -> None:
+    """nomic and bge-m3 can be priced, but nothing here can call them."""
+    model = get_catalog().embedding_model("nomic-embed-text-v1.5")
+    assert model is not None
+    assert embedding_model_support(model) == "no embedding adapter for provider 'local' yet"

@@ -14,8 +14,10 @@ from arq import ArqRedis
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from zk2.config import get_settings
 from zk2.core.errors import ValidationError
 from zk2.llm.catalog import get_catalog
+from zk2.llm.registry import embedding_model_support
 from zk2.orgs.models import OrgSettings
 from zk2.orgs.schemas import EmbeddingSettingsDto
 
@@ -53,7 +55,10 @@ async def describe_embedding_settings(db: AsyncSession, *, org_id: int) -> Embed
     return EmbeddingSettingsDto(
         embedding_provider=settings.embedding_provider,
         embedding_model=settings.embedding_model,
-        dimensions=spec.native_dimensions if spec else 0,
+        # The width vectors are stored at, not the model's native size: a
+        # 3072-wide model is asked to truncate, and reporting 3072 here
+        # described an index that has never existed. See ADR-0004.
+        dimensions=get_settings().ingest.embedding_dimensions if spec else 0,
         indexed_sources=counts.indexed or 0,
         stale_sources=counts.stale or 0,
     )
@@ -62,8 +67,14 @@ async def describe_embedding_settings(db: AsyncSession, *, org_id: int) -> Embed
 async def update_embedding_settings(
     db: AsyncSession, *, org_id: int, provider: str, model: str
 ) -> EmbeddingSettingsDto:
-    if get_catalog().embedding_model(model) is None:
+    spec = get_catalog().embedding_model(model)
+    if spec is None:
         raise ValidationError(f"Unknown embedding model: {model}")
+    # Saving a model the ingest path will refuse is a setting that breaks
+    # every upload and every query afterwards, with no error until then.
+    reason = embedding_model_support(spec)
+    if reason is not None:
+        raise ValidationError(f"{spec.display_name} cannot be used here: {reason}")
 
     settings = await get_org_settings(db, org_id=org_id)
     settings.embedding_provider = provider

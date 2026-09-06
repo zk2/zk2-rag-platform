@@ -25,9 +25,17 @@ export type EmbeddingModel = {
   native_dimensions: number;
   supports_dimensions: boolean;
   price_in_per_mtok: string;
+  /** False when this deployment has no way to run the model. */
+  usable: boolean;
+  unusable_reason: string | null;
 };
 
-export type Catalog = { chat: ChatModel[]; embedding: EmbeddingModel[] };
+export type Catalog = {
+  chat: ChatModel[];
+  embedding: EmbeddingModel[];
+  /** Width every vector is stored at, whatever the model's native size. */
+  embedding_dimensions: number;
+};
 
 export function useCatalog() {
   return useQuery({

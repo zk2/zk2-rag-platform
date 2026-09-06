@@ -51,11 +51,18 @@ class EmbeddingModel(BaseModel):
     supports_dimensions: bool = False
     price_in_per_mtok: Decimal = Field(default=Decimal(0))
     kind: Literal["embedding"] = "embedding"
+    # Filled in when the catalog is served: a model in the yaml is not
+    # necessarily a model this deployment can run. See embedding_model_support.
+    usable: bool = True
+    unusable_reason: str | None = None
 
 
 class Catalog(BaseModel):
     chat: list[ChatModel]
     embedding: list[EmbeddingModel]
+    # Width every vector is stored at, whatever the model's native size. Set
+    # when the catalog is served; 0 in the raw yaml. See ADR-0004.
+    embedding_dimensions: int = 0
 
     def chat_model(self, model_id: str) -> ChatModel | None:
         return next((m for m in self.chat if m.id == model_id), None)

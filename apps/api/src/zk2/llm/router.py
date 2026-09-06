@@ -10,12 +10,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from zk2.auth.rbac import OrgContext, require_org
+from zk2.config import get_settings
 from zk2.core.audit import write_audit
 from zk2.core.deps import get_db_dep
 from zk2.core.errors import ValidationError
 from zk2.core.security import encrypt
-from zk2.llm.catalog import Catalog, get_catalog
+from zk2.llm.catalog import Catalog, EmbeddingModel, get_catalog
 from zk2.llm.models import LLMProviderConfig
+from zk2.llm.registry import embedding_model_support
 from zk2.llm.schemas import ProviderDto, ProviderUpsert
 
 SUPPORTED_PROVIDERS = {"openai", "anthropic", "gemini", "ollama"}
@@ -24,12 +26,28 @@ router = APIRouter(prefix="/settings/providers", tags=["settings"])
 models_router = APIRouter(prefix="/settings/models", tags=["settings"])
 
 
+def _with_support(model: EmbeddingModel) -> EmbeddingModel:
+    reason = embedding_model_support(model)
+    return model.model_copy(update={"usable": reason is None, "unusable_reason": reason})
+
+
 @models_router.get("", response_model=Catalog)
 async def list_models(
     _ctx: Annotated[OrgContext, Depends(require_org("viewer"))],
 ) -> Catalog:
-    """The model catalog: what the UI offers and what cost accounting uses."""
-    return get_catalog()
+    """The model catalog: what the UI offers and what cost accounting uses.
+
+    The yaml lists models the platform knows how to price. Whether a given
+    embedding model can be selected is a property of this deployment, so it is
+    answered here rather than baked into the file.
+    """
+    catalog = get_catalog()
+    return catalog.model_copy(
+        update={
+            "embedding": [_with_support(m) for m in catalog.embedding],
+            "embedding_dimensions": get_settings().ingest.embedding_dimensions,
+        }
+    )
 
 
 def _to_dto(row: LLMProviderConfig) -> ProviderDto:

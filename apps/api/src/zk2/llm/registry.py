@@ -21,12 +21,37 @@ from zk2.core.quota import KeySource, ensure_system_key_allowed
 from zk2.core.security import decrypt
 from zk2.llm.anthropic_provider import AnthropicProvider
 from zk2.llm.base import EmbeddingProvider, LLMProvider
+from zk2.llm.catalog import EmbeddingModel
 from zk2.llm.gemini_provider import GeminiProvider
 from zk2.llm.models import LLMProviderConfig
 from zk2.llm.ollama_provider import OllamaProvider
 from zk2.llm.openai_provider import OpenAIEmbeddings, OpenAIProvider
 
 KEY_PROVIDERS = ("openai", "anthropic", "gemini")
+
+# Embeddings have one adapter so far. Chat has four; the asymmetry is real and
+# the UI has to know about it, or it offers models that fail at ingest time.
+SUPPORTED_EMBEDDING_PROVIDERS = frozenset({"openai"})
+
+
+def embedding_model_support(model: EmbeddingModel) -> str | None:
+    """Why this deployment cannot use an embedding model, or None when it can.
+
+    Two ways to be unusable: no adapter for the provider, and a fixed width
+    that is not the one the index stores. Every vector is written at
+    EMBEDDING_DIMENSIONS because pgvector cannot build HNSW above 2000
+    dimensions (ADR-0004), so a model that cannot truncate has to match it
+    exactly.
+    """
+    if model.provider not in SUPPORTED_EMBEDDING_PROVIDERS:
+        return f"no embedding adapter for provider '{model.provider}' yet"
+    width = get_settings().ingest.embedding_dimensions
+    if not model.supports_dimensions and model.native_dimensions != width:
+        return (
+            f"returns {model.native_dimensions}-dimensional vectors and cannot "
+            f"truncate; the index stores {width}"
+        )
+    return None
 
 
 async def _get_config(db: AsyncSession, org_id: int, provider: str) -> LLMProviderConfig | None:

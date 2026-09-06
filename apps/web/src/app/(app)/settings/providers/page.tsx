@@ -149,6 +149,12 @@ function EmbeddingCard() {
           Retrieval only sees vectors built with the model configured here. Changing it does not
           rewrite the existing index - reindexing does, and it costs one embedding call per chunk.
         </p>
+        <p className="text-sm text-slate-500">
+          One model per organization, and every vector is stored at{" "}
+          {catalog.data?.embedding_dimensions ?? 1536} dimensions: wider models are asked to
+          truncate, because pgvector cannot index above 2000. The chat model is per bot, on the
+          bot&apos;s own settings page.
+        </p>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
           <div className="md:col-span-2">
@@ -160,8 +166,11 @@ function EmbeddingCard() {
               className="w-full h-9 rounded border border-slate-300 px-2 text-sm bg-white"
             >
               {catalog.data?.embedding.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.display_name} ({m.native_dimensions}d)
+                <option key={m.id} value={m.id} disabled={!m.usable}>
+                  {m.display_name}
+                  {m.usable
+                    ? ` (${catalog.data.embedding_dimensions}d)`
+                    : ` - ${m.unusable_reason}`}
                 </option>
               ))}
               {!catalog.data && chosen && <option value={chosen}>{chosen}</option>}
