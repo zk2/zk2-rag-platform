@@ -157,7 +157,11 @@ async def observability_links(
     return ObservabilityLinks(
         grafana_url=settings.grafana_url,
         jaeger_url=settings.jaeger_url,
-        langfuse_url=settings.langfuse_host if settings.langfuse_public_key else None,
+        # The browser cannot resolve http://langfuse-web:3000; the public URL is
+        # the one a person can open, and the host is only the export target.
+        langfuse_url=(settings.langfuse_public_url or settings.langfuse_host)
+        if settings.langfuse_public_key
+        else None,
         prometheus_url=settings.prometheus_url,
         sentry_enabled=bool(settings.sentry_dsn),
         tracing_enabled=bool(settings.otel_endpoint),

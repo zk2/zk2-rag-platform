@@ -206,6 +206,20 @@ function ModelTable({ rows }: { rows: ModelUsage[] }) {
   );
 }
 
+/**
+ * Grafana, Jaeger and Prometheus bind to loopback on the server and are reached
+ * over an SSH tunnel, so their links are right and unreachable at the same
+ * time. Saying so beats letting the reader discover it by clicking.
+ */
+function needsTunnel(url: string): boolean {
+  try {
+    const host = new URL(url).hostname;
+    return host === "localhost" || host === "127.0.0.1" || host === "::1";
+  } catch {
+    return false;
+  }
+}
+
 function ToolLinks({ links }: { links?: Links }) {
   if (!links) return null;
   const entries = [
@@ -224,16 +238,23 @@ function ToolLinks({ links }: { links?: Links }) {
           <div key={label} className="flex items-center gap-2 text-sm">
             <Icon className="size-4 text-slate-400" />
             {url ? (
-              <a
-                href={url}
-                target="_blank"
-                rel="noreferrer"
-                className="text-slate-900 hover:underline inline-flex items-center gap-1"
-              >
-                {label} <ExternalLink className="size-3" />
-              </a>
+              <>
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-slate-900 hover:underline inline-flex items-center gap-1"
+                >
+                  {label} <ExternalLink className="size-3" />
+                </a>
+                {needsTunnel(url) && (
+                  <span className="text-xs text-slate-400">
+                    server-local, needs an SSH tunnel
+                  </span>
+                )}
+              </>
             ) : (
-              <span className="text-slate-400">{label} — not configured</span>
+              <span className="text-slate-400">{label} - not configured</span>
             )}
           </div>
         ))}

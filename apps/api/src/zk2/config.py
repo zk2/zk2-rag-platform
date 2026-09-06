@@ -143,7 +143,12 @@ class LLMSettings(_Base):
 class ObservabilitySettings(_Base):
     langfuse_public_key: SecretStr | None = Field(None, alias="LANGFUSE_PUBLIC_KEY")
     langfuse_secret_key: SecretStr | None = Field(None, alias="LANGFUSE_SECRET_KEY")
+    # Where the SDK sends traces. Inside compose that is a service name, which
+    # is why it cannot double as the link shown in the browser.
     langfuse_host: str = Field("http://localhost:3030", alias="LANGFUSE_HOST")
+    # Where a person reaches Langfuse: the tunnel address, or the public
+    # hostname when it is published under one.
+    langfuse_public_url: str | None = Field(None, alias="LANGFUSE_PUBLIC_URL")
     otel_endpoint: str | None = Field(None, alias="OTEL_EXPORTER_OTLP_ENDPOINT")
     otel_service_name: str = Field("zk2-api", alias="OTEL_SERVICE_NAME")
     sentry_dsn: str | None = Field(None, alias="SENTRY_DSN")
