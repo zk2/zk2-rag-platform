@@ -51,10 +51,46 @@ def get_langfuse() -> Any | None:
 
 @dataclass(slots=True)
 class TraceStep:
-    """One step of a turn - retrieval or generation."""
+    """One step of a turn - a pipeline node, or the model call inside one."""
 
     otel_span: Span | None = None
     langfuse_observation: Any | None = None
+
+    def child(
+        self,
+        name: str,
+        *,
+        kind: str = "span",
+        input_data: Any = None,
+        model: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> TraceStep:
+        """A step nested inside this one.
+
+        Created from the parent objects rather than from the client, because
+        neither backend infers the nesting on its own: an observation started
+        from the client attaches to whatever OTel context happens to be
+        current, which for a chat turn is the websocket connection. Every span
+        then arrives as a root of its own - one turn showed up in Langfuse as
+        eight unrelated traces instead of one tree.
+        """
+        otel_span = None
+        tracer = otel_trace.get_tracer(_TRACER_NAME)
+        if self.otel_span is not None:
+            parent = otel_trace.set_span_in_context(self.otel_span)
+            otel_span = tracer.start_span(name, context=parent)
+        else:
+            otel_span = tracer.start_span(name)
+
+        observation = None
+        if self.langfuse_observation is not None:
+            try:
+                observation = self.langfuse_observation.start_observation(
+                    name=name, as_type=kind, input=input_data, model=model, metadata=metadata
+                )
+            except Exception:
+                logger.warning("tracing.step_start_failed", step=name)
+        return TraceStep(otel_span=otel_span, langfuse_observation=observation)
 
     def end(self, **fields: Any) -> None:
         if self.langfuse_observation is not None:
@@ -88,16 +124,10 @@ class TurnTrace:
         model: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> TraceStep:
-        otel_span = otel_trace.get_tracer(_TRACER_NAME).start_span(name)
-        observation = None
-        if self._client is not None:
-            try:
-                observation = self._client.start_observation(
-                    name=name, as_type=kind, input=input_data, model=model, metadata=metadata
-                )
-            except Exception:
-                logger.warning("tracing.step_start_failed", step=name)
-        return TraceStep(otel_span=otel_span, langfuse_observation=observation)
+        """A step directly under the turn."""
+        return self.root.child(
+            name, kind=kind, input_data=input_data, model=model, metadata=metadata
+        )
 
     def end(self, **fields: Any) -> None:
         self.root.end(**fields)

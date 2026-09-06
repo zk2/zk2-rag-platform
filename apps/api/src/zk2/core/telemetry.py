@@ -33,7 +33,10 @@ def setup_telemetry(app: FastAPI) -> None:
         )
         trace.set_tracer_provider(provider)
 
-        FastAPIInstrumentor.instrument_app(app)
+        # Prometheus scrapes /metrics every few seconds and the load balancer
+        # polls /health; tracing those buries every real request under
+        # hundreds of identical two-millisecond spans.
+        FastAPIInstrumentor.instrument_app(app, excluded_urls="health,metrics")
         HTTPXClientInstrumentor().instrument()
         RedisInstrumentor().instrument()
 

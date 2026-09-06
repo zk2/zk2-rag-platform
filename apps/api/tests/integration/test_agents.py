@@ -79,7 +79,7 @@ async def _run(model: BaseChatModel, tools: Any, question: str = "6*7?"):
         provider="openai",
         model="gpt-4.1-mini",
         max_steps=5,
-        trace=start_turn("test.agent"),
+        parent=start_turn("test.agent").root,
     ):
         if isinstance(item, AgentOutcome):
             outcome = item

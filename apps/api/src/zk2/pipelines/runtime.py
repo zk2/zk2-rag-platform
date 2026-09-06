@@ -79,6 +79,7 @@ async def execute(
         config = node.config_model.model_validate(spec.config)
 
         step = ctx.trace.step(spec.id, kind="span", metadata={"node_type": spec.type})
+        ctx.step = step
         started = time.perf_counter()
         # Any node can fail on something outside the pipeline's control - a
         # provider with no credits left, a database hiccup. That is a failed

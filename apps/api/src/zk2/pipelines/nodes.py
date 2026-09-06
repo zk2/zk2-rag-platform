@@ -283,7 +283,8 @@ class Generate(Node):
         ]
 
         llm: LLMProvider = await get_llm_provider(ctx.db, org_id=ctx.org_id, provider=provider_name)
-        generation = ctx.trace.step(
+        parent = ctx.step or ctx.trace.root
+        generation = parent.child(
             "generation",
             kind="generation",
             input_data=[{"role": m.role, "content": m.content} for m in messages],
@@ -397,7 +398,7 @@ class Agent(Node):
             provider=provider,
             model=model,
             max_steps=config.max_steps,
-            trace=ctx.trace,
+            parent=ctx.step or ctx.trace.root,
         ):
             if isinstance(item, AgentOutcome):
                 state.answer = item.answer

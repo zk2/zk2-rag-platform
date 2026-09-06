@@ -23,7 +23,7 @@ from langchain_core.tools import StructuredTool
 from zk2.agents.tools import ToolSpec
 from zk2.chat.events import StreamEvent
 from zk2.core.metrics import llm_errors_total, record_llm_call
-from zk2.core.tracing import TurnTrace
+from zk2.core.tracing import TraceStep
 from zk2.llm.catalog import estimate_cost
 
 logger = structlog.get_logger()
@@ -72,14 +72,14 @@ async def stream_agent(
     provider: str,
     model: str,
     max_steps: int,
-    trace: TurnTrace,
+    parent: TraceStep,
 ) -> AsyncIterator[StreamEvent | AgentOutcome]:
     """Run the loop, yielding protocol events and finally the outcome."""
     from langchain.agents import create_agent  # noqa: PLC0415  (heavy import)
 
     outcome = AgentOutcome()
     agent = create_agent(chat_model, to_langchain_tools(tools), system_prompt=system_prompt)
-    step = trace.step(
+    step = parent.child(
         "agent",
         kind="agent",
         input_data=question,

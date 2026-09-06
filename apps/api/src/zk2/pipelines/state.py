@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from zk2.bots.models import Bot, BotVersion
-from zk2.core.tracing import TurnTrace
+from zk2.core.tracing import TraceStep, TurnTrace
 from zk2.retrieval.base import RetrievedChunk
 
 
@@ -41,3 +41,6 @@ class NodeContext:
     bot: Bot
     version: BotVersion
     trace: TurnTrace
+    # The span of the node currently running, so a node can nest its own work
+    # (a model call) inside it instead of alongside it. Set by the runtime.
+    step: TraceStep | None = None

@@ -36,10 +36,17 @@ async def test_flush_without_a_client_is_a_no_op() -> None:
 
 
 class FakeObservation:
-    def __init__(self) -> None:
+    def __init__(self, name: str = "root") -> None:
+        self.name = name
         self.updates: list[dict[str, Any]] = []
+        self.children: list[FakeObservation] = []
         self.ended = False
         self.trace_id = "trace-123"
+
+    def start_observation(self, **kwargs: Any) -> FakeObservation:
+        child = FakeObservation(str(kwargs.get("name", "")))
+        self.children.append(child)
+        return child
 
     def update(self, **fields: Any) -> None:
         self.updates.append(fields)
@@ -53,8 +60,8 @@ class FakeLangfuse:
         self.observations: list[FakeObservation] = []
         self.flushed = False
 
-    def start_observation(self, **_kwargs: Any) -> FakeObservation:
-        observation = FakeObservation()
+    def start_observation(self, **kwargs: Any) -> FakeObservation:
+        observation = FakeObservation(str(kwargs.get("name", "")))
         self.observations.append(observation)
         return observation
 
@@ -82,9 +89,50 @@ async def test_turn_and_steps_reach_the_client(fake_client: FakeLangfuse) -> Non
     turn.end(output={"citations": 1})
 
     assert turn.trace_url == "https://langfuse.example/traces/trace-123"
-    assert len(fake_client.observations) == 2
-    assert all(o.ended for o in fake_client.observations)
-    assert fake_client.observations[1].updates[0]["output"] == "answer"
+    (root,) = fake_client.observations
+    (generation,) = root.children
+    assert root.ended and generation.ended
+    assert generation.updates[0]["output"] == "answer"
+
+
+async def test_a_step_is_a_child_of_the_turn_and_not_a_second_root(
+    fake_client: FakeLangfuse,
+) -> None:
+    """One turn is one tree.
+
+    Starting an observation from the client attaches it to whatever OTel
+    context is current - for a chat turn that is the websocket connection, so
+    every span arrived as a root of its own and one turn showed up as eight
+    unrelated traces.
+    """
+    turn = start_turn("rag.turn")
+    node = turn.step("answer")
+    node.child("generation", kind="generation")
+
+    assert len(fake_client.observations) == 1, "only the turn talks to the client"
+    (root,) = fake_client.observations
+    assert [c.name for c in root.children] == ["answer"]
+    assert [c.name for c in root.children[0].children] == ["generation"]
+
+
+async def test_a_parent_that_fails_to_open_a_child_still_returns_a_step(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class BrokenChild(FakeObservation):
+        def start_observation(self, **_kwargs: Any) -> FakeObservation:
+            raise RuntimeError("langfuse went away mid-turn")
+
+    class Client(FakeLangfuse):
+        def start_observation(self, **kwargs: Any) -> FakeObservation:
+            observation = BrokenChild(str(kwargs.get("name", "")))
+            self.observations.append(observation)
+            return observation
+
+    monkeypatch.setattr(tracing, "get_langfuse", Client)
+    turn = start_turn("rag.turn")
+    step = turn.step("answer")
+    step.end(duration_ms=1)
+    turn.end()
 
 
 async def test_a_broken_client_does_not_break_the_turn(
