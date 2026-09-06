@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
-import { FlaskConical, Play, Upload } from "lucide-react";
+import { FlaskConical, Play, Trash2, Upload } from "lucide-react";
 
 type Dataset = { id: number; name: string; description: string | null; item_count: number };
 type Metric = { name: string; needs_judge: boolean; doc: string };
@@ -82,6 +82,12 @@ function Datasets({
       ),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["eval-datasets"] }),
   });
+  // Importing twice appends rather than replaces, so a dataset that has taken
+  // a corrected file needs a way out. The API has always allowed it.
+  const remove = useMutation({
+    mutationFn: (id: number) => api.delete(`/evals/datasets/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["eval-datasets"] }),
+  });
 
   return (
     <Card>
@@ -135,6 +141,17 @@ function Datasets({
                   }}
                 />
               </label>
+              <button
+                className="text-slate-400 hover:text-red-600"
+                title="Delete this dataset and its runs"
+                disabled={remove.isPending}
+                onClick={() => {
+                  if (confirm(`Delete "${dataset.name}" with its items and runs?`))
+                    remove.mutate(dataset.id);
+                }}
+              >
+                <Trash2 className="size-4" />
+              </button>
             </li>
           ))}
         </ul>
@@ -142,6 +159,9 @@ function Datasets({
           <p className="text-sm text-slate-500">
             No datasets yet. A CSV with question, expected_answer, expected_sources, tags works.
           </p>
+        )}
+        {remove.error && (
+          <p className="text-xs text-red-600">{(remove.error as Error).message}</p>
         )}
         {upload.data && (
           <p className="text-xs text-slate-600">
