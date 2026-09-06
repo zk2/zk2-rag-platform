@@ -15,8 +15,8 @@ jobs:
     name: API — lint + typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           version: "0.5.4"
           enable-cache: true
@@ -39,8 +39,8 @@ jobs:
     name: API — pytest (testcontainers)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           version: "0.5.4"
           enable-cache: true
@@ -58,11 +58,11 @@ jobs:
     name: Web — lint + typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
         with:
           version: 9.12.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
@@ -77,11 +77,11 @@ jobs:
     name: Web — vitest
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
         with:
           version: 9.12.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
@@ -92,9 +92,9 @@ jobs:
     name: Security scans
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Pinned, not "latest": the action's own default was 8.24.3, which
@@ -102,7 +102,7 @@ jobs:
           # five test fixtures as leaks. A scanner whose behaviour moves under
           # you is worse than an old one - upgrade deliberately, having run it.
           GITLEAKS_VERSION: 8.30.1
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v7
         with:
           version: "0.5.4"
       - run: uv python install 3.12
@@ -146,8 +146,8 @@ jobs:
       E2E_PASSWORD: E2ePassword123!
       API_BASE_URL: http://127.0.0.1:8000
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           version: "0.5.4"
           enable-cache: true
@@ -155,10 +155,10 @@ jobs:
       - name: Install api deps
         working-directory: apps/api
         run: uv sync --extra dev
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v5
         with:
           version: 9.12.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
@@ -177,7 +177,7 @@ jobs:
         run: pnpm --filter web exec playwright install --with-deps chromium
       - name: Run e2e
         run: pnpm --filter web e2e
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: failure()
         with:
           name: playwright-report
