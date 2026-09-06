@@ -81,6 +81,10 @@ dependencies = [
 # runs without it and simply keeps the fused order.
 rerank = [
     "sentence-transformers>=3.3.0",
+    # Declared directly, not left transitive: `tool.uv.sources` only redirects
+    # what the project asks for by name, and without this torch resolves from
+    # PyPI with the CUDA runtime attached.
+    "torch>=2.4",
 ]
 dev = [
     "ruff>=0.7.0",
@@ -102,6 +106,18 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/zk2"]
+
+# torch is pulled in by sentence-transformers, and the default wheel carries the
+# CUDA runtime: two and a half gigabytes of nvidia libraries that a CPU-only
+# deployment never loads. The CPU index is marked explicit so nothing else
+# resolves against it.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
 
 [tool.ruff]
 line-length = 100

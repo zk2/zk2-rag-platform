@@ -1,0 +1,85 @@
+# ADR-0016: Reranking is a small multilingual cross-encoder, on CPU
+
+- Status: Accepted
+- Date: 2026-09-06
+
+## Context
+
+The default pipeline has always had a `rerank` node, the constructor offers it,
+and the README lists cross-encoder reranking as a feature. On the deployed
+stand the node took between zero and two milliseconds: `RERANK_ENABLED` was
+false and `sentence-transformers` was not in the image, so `rerank` silently
+returned the first `top_k` of the fused list. The graph drew a box, the trace
+showed a span, and nothing happened inside either.
+
+That is worse than not having the feature. It also makes the pipeline
+constructor and A/B untestable in the one comparison they most obviously
+invite: with and without reranking.
+
+Turning it on is not free. A cross-encoder reads query and passage together,
+so it costs one forward pass per candidate, on the turn a person is waiting
+for. Measured on twelve CPU cores against this corpus, thirty candidates:
+
+| Model | Params | Thirty candidates |
+|---|---|---|
+| `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` | 118M | 3.5 s |
+| `BAAI/bge-reranker-base` | 278M | 18 s |
+| `BAAI/bge-reranker-v2-m3` (the configured default) | 568M | 30 s |
+
+A turn otherwise takes two to four seconds, most of it the model generating.
+The configured default was therefore not a slow choice, it was an impossible
+one: it would have multiplied every answer's latency by ten.
+
+Quality, over the whole 386-chunk corpus rather than a truncated candidate
+list, was not the differentiator: on four questions with known answers, both
+the small and the base model put the right passage in the top two, 4 of 4.
+
+## Decision
+
+Ship reranking as something that runs:
+
+- the `rerank` extra is installed in the image, with torch pinned to the
+  CPU-only index - the default PyPI wheel drags in two and a half gigabytes of
+  CUDA runtime that a CPU deployment never loads
+- the model is baked into the image and seeds a named volume, so a fresh
+  deployment reranks the first question instead of downloading a model minutes
+  into someone's session
+- the default becomes `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`:
+  multilingual, because the corpus is, and the only size that fits a CPU turn
+- `RERANK_CANDIDATES` is honoured - it existed as a setting and was ignored -
+  and defaults to 15 of the 30 fusion produces. What is dropped keeps its fused
+  rank; it would have had to beat fifteen better-ranked passages to be used
+- `RERANK_MAX_TOKENS` caps the pair at 512, which covers a 400-token chunk plus
+  the question
+- the model loads at startup, in the background, so the first question does not
+  pay the six seconds it takes to load
+
+The larger models stay reachable through `RERANK_MODEL` for a deployment with a
+GPU, which is where they belong.
+
+## Consequences
+
+- Reranking adds roughly two seconds to a turn at fifteen candidates. That is
+  real, and the user notices it
+- Whether those two seconds buy anything on this corpus is a question for the
+  golden set and the A/B experiment, not for taste. The point of shipping it is
+  that the comparison is now possible to run
+- The image grows by torch and the model. On a stand with a 50 GB disk this is
+  affordable; on a smaller one it is not, and `RERANK_ENABLED=false` still
+  turns the whole thing off cleanly
+- Reranking runs in the worker too, inside eval runs, so a hundred-question run
+  pays it a hundred times. Worth remembering before running one on a laptop
+
+## Alternatives considered
+
+- **A hosted reranker** (Cohere, Voyage, Jina). Better models, roughly 100 ms,
+  no image weight. It needs another provider adapter, another key, and it puts
+  the retrieved passages - the documents themselves - through a third party.
+  Worth doing later as an alternative node, not as the only way to rerank
+- **Quantised or ONNX inference.** A real answer to the latency, and the
+  obvious next step if reranking proves its worth. Deferred rather than
+  rejected: it adds a runtime and a conversion step to a decision that has not
+  been justified by evals yet
+- **Delete the node.** Honest, and rejected: hybrid retrieval without a reranker
+  is a weaker product, and the platform exists to make exactly this kind of
+  choice measurable

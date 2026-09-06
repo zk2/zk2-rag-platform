@@ -21,3 +21,4 @@ and the alternatives that were actually considered.
 | [0013](0013-shared-key-allowance.md) | A shared-key allowance instead of billing | Accepted |
 | [0014](0014-own-eval-metrics.md) | Eval metrics implemented in-project rather than Ragas | Accepted |
 | [0015](0015-structured-ingestion.md) | Structure comes from the format, and chunks are packed to a budget | Accepted |
+| [0016](0016-cpu-reranking.md) | Reranking is a small multilingual cross-encoder, on CPU | Accepted |

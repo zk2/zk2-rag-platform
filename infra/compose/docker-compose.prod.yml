@@ -32,7 +32,7 @@ x-api-runtime-env: &api-runtime-env
   # Named volumes, shared by api and worker: the API writes an upload, the
   # worker reads the same bytes back when it indexes the document.
   LOCAL_UPLOAD_DIR: /app/uploads
-  HF_HUB_CACHE: /app/.cache/hf
+  HF_HUB_CACHE: /opt/hf
   # Caddy sets X-Forwarded-For, so per-IP limits see the real client
   TRUST_PROXY_HEADERS: "true"
 
@@ -97,7 +97,7 @@ services:
       <<: *api-runtime-env
     volumes:
       - uploads:/app/uploads
-      - hf_cache:/app/.cache/hf
+      - hf_models:/opt/hf
     depends_on:
       postgres:
         condition: service_healthy
@@ -120,7 +120,7 @@ services:
       OTEL_SERVICE_NAME: zk2-worker
     volumes:
       - uploads:/app/uploads
-      - hf_cache:/app/.cache/hf
+      - hf_models:/opt/hf
     depends_on:
       postgres:
         condition: service_healthy
@@ -367,7 +367,7 @@ volumes:
   postgres_data:
   redis_data:
   uploads:
-  hf_cache:
+  hf_models:
   caddy_data:
   caddy_config:
   prometheus_data:

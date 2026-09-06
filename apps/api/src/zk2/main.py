@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -38,6 +39,7 @@ from zk2.llm.router import router as providers_router
 from zk2.observability.router import router as observability_router
 from zk2.orgs.router import router as org_settings_router
 from zk2.pipelines.router import router as pipelines_router
+from zk2.retrieval.rerank import warm_up as rerank_warm_up
 from zk2.sources.router import router as sources_router
 
 
@@ -46,9 +48,14 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     engine = get_engine()
     instrument_sqlalchemy_engine(engine.sync_engine)
+    # In the background: loading the cross-encoder takes seconds, and the
+    # process must start answering health checks before it finishes. Whoever
+    # asks the first question should not be the one paying for the load.
+    warm = asyncio.create_task(rerank_warm_up())
     try:
         yield
     finally:
+        warm.cancel()
         await flush_traces()
         await dispose_engine()
         await close_redis()

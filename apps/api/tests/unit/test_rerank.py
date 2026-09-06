@@ -9,7 +9,7 @@ import pytest
 from zk2.config import get_settings
 from zk2.retrieval import rerank as rerank_module
 from zk2.retrieval.base import RetrievedChunk
-from zk2.retrieval.rerank import rerank, reset_model_cache
+from zk2.retrieval.rerank import rerank, reset_model_cache, warm_up
 
 pytestmark = pytest.mark.unit
 
@@ -54,7 +54,8 @@ def enabled(monkeypatch: pytest.MonkeyPatch) -> FakeCrossEncoder:
     return model
 
 
-async def test_disabled_by_default_keeps_the_fused_order() -> None:
+async def test_turning_it_off_keeps_the_fused_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(get_settings().retrieval, "rerank_enabled", False)
     result = await rerank("the answer", CANDIDATES)
     assert [c.chunk_id for c in result] == [1, 2, 3]
 
@@ -127,3 +128,51 @@ def test_load_failure_is_remembered(monkeypatch: pytest.MonkeyPatch) -> None:
     rerank_module._load_model()
     rerank_module._load_model()
     assert rerank_module._load_failed is True
+
+
+async def test_only_the_head_of_the_list_is_scored(
+    enabled: FakeCrossEncoder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Scoring is linear in candidates and the user is waiting for the answer.
+
+    Measured on twelve CPU cores, the default model takes 2.3s over fifteen
+    candidates and 3.5s over thirty - on a turn that otherwise runs in two to
+    four seconds. The tail of a fused list pays that price and almost never
+    reaches the prompt.
+    """
+    monkeypatch.setattr(get_settings().retrieval, "rerank_candidates", 2)
+    candidates = [chunk(1, "filler"), chunk(2, "filler"), chunk(3, "the answer")]
+
+    result = await rerank("the answer", candidates)
+
+    assert len(enabled.seen) == 2, "only the head was handed to the model"
+    # The unscored tail keeps its fused rank rather than disappearing
+    assert [c.chunk_id for c in result] == [1, 2, 3]
+    assert result[-1].retriever == "rrf"
+
+
+async def test_the_cap_does_not_shorten_the_result(
+    enabled: FakeCrossEncoder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(get_settings().retrieval, "rerank_candidates", 1)
+    result = await rerank("the answer", CANDIDATES)
+    assert len(result) == len(CANDIDATES)
+
+
+async def test_warm_up_loads_the_model_before_anyone_asks(
+    enabled: FakeCrossEncoder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    loaded: list[str] = []
+    monkeypatch.setattr(rerank_module, "_load_model", lambda: loaded.append("x"))
+    await warm_up()
+    assert loaded == ["x"]
+
+
+async def test_warm_up_does_nothing_when_reranking_is_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(get_settings().retrieval, "rerank_enabled", False)
+    monkeypatch.setattr(
+        rerank_module, "_load_model", lambda: pytest.fail("loaded a model nobody will use")
+    )
+    await warm_up()

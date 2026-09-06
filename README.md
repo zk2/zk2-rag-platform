@@ -15,7 +15,7 @@ decision is written down next to the code that made it.
 | Area | Implementation |
 |---|---|
 | **Async Python** | FastAPI, SQLAlchemy 2.0 async over asyncpg, Arq workers, 366 tests on testcontainers |
-| **RAG** | Hybrid retrieval (pgvector + Postgres full-text in the document's own language), RRF fusion, optional cross-encoder rerank, structure-aware chunking that packs a document's own sections to a token budget, citations that name a page |
+| **RAG** | Hybrid retrieval (pgvector + Postgres full-text in the document's own language), RRF fusion, a cross-encoder reranker that ships in the image and runs on CPU, structure-aware chunking that packs a document's own sections to a token budget, citations that name a page |
 | **Multi-provider LLM** | OpenAI, Anthropic, Gemini, Ollama behind one interface, with a model catalog that prices every call |
 | **Agents** | LangGraph loop with built-in tools and MCP servers, tool calls streamed to the browser |
 | **Visual pipeline builder** | React Flow canvas, node configs generated from JSON Schema, versioning with rollback, test runs against an unsaved draft |

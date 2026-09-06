@@ -181,10 +181,23 @@ class IngestSettings(_Base):
 class RetrievalSettings(_Base):
     """Hybrid retrieval and reranking."""
 
-    # Cross-encoder reranking needs the `rerank` extra (sentence-transformers + torch)
-    rerank_enabled: bool = Field(False, alias="RERANK_ENABLED")
-    rerank_model: str = Field("BAAI/bge-reranker-v2-m3", alias="RERANK_MODEL")
-    rerank_candidates: int = Field(30, alias="RERANK_CANDIDATES")
+    # Cross-encoder reranking needs the `rerank` extra (sentence-transformers +
+    # torch). It ships in the image; without the extra the chat path keeps the
+    # fused order rather than failing, so leaving this on is safe anywhere.
+    rerank_enabled: bool = Field(True, alias="RERANK_ENABLED")
+    # A cross-encoder reads query and passage together, so the cost is one
+    # forward pass per candidate and the model size is felt on every turn.
+    # Measured on 12 CPU cores over thirty candidates: this model 3.5s,
+    # bge-reranker-base 18s, bge-reranker-v2-m3 30s. The last two are GPU
+    # choices, drop-in through RERANK_MODEL wherever there is one.
+    rerank_model: str = Field("cross-encoder/mmarco-mMiniLMv2-L12-H384-v1", alias="RERANK_MODEL")
+    # Candidates actually scored. Fusion hands over thirty; scoring all of them
+    # doubles the turn, and the tail of a fused list is rarely what the answer
+    # needed anyway.
+    rerank_candidates: int = Field(15, alias="RERANK_CANDIDATES", ge=1, le=200)
+    # Tokens of query and passage the cross-encoder reads. Chunks are budgeted
+    # at 400, so 512 covers a whole one plus the question.
+    rerank_max_tokens: int = Field(512, alias="RERANK_MAX_TOKENS", ge=64, le=8192)
 
 
 class ChatSettings(_Base):

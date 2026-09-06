@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable, Coroutine
 from typing import Any, ClassVar
 
@@ -21,6 +22,7 @@ from zk2.core.db import db_session, dispose_engine
 from zk2.core.logging import configure_logging
 from zk2.core.tracing import flush_traces
 from zk2.evals.runner import RunSettings, execute_run
+from zk2.retrieval.rerank import warm_up as rerank_warm_up
 from zk2.sources.ingest import ingest_source as _ingest_source
 
 logger = structlog.get_logger()
@@ -62,6 +64,10 @@ async def check_mcp_servers(_: dict[str, Any]) -> None:
 
 async def on_startup(_: dict[str, Any]) -> None:
     configure_logging()
+    # The worker reranks too, inside eval runs, and a run of a hundred
+    # questions must not begin by loading a model a hundred times' worth of
+    # waiting into the first one.
+    asyncio.create_task(rerank_warm_up())  # noqa: RUF006  (fire and forget by design)
     logger.info("arq.worker.start")
 
 
