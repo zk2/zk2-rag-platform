@@ -143,6 +143,29 @@ To run without any of it: `make prod-up PROD_PROFILES=`, and empty
 containers that are not running, the api retries every export forever and
 fills the log with it.
 
+### Publishing Langfuse under its own name
+
+A tunnel is fine for an incident and tiresome for daily use. Setting
+`LANGFUSE_HOSTNAME` makes Caddy match that Host header and route it to
+`langfuse-web`, so the proxy in front sends both names to the same port and
+nothing new is published:
+
+```
+LANGFUSE_HOSTNAME=langfuse.example.com
+LANGFUSE_PUBLIC_URL=https://langfuse.example.com
+```
+
+`LANGFUSE_PUBLIC_URL` is what NextAuth signs cookies against; leave it pointing
+at localhost and the login form will accept the password and bounce straight
+back to itself.
+
+Two things worth being deliberate about before pointing DNS at it. Traces carry
+the prompts and the retrieved chunks - that is the text of the indexed
+documents, not metadata about it. And `AUTH_DISABLE_SIGNUP` defaults to true
+here for a reason: self-hosted Langfuse otherwise offers a registration form to
+anybody who finds the address. The account created by `LANGFUSE_INIT_*` on the
+first start is meant to be the only one.
+
 ## Backups
 
 There is no RDS here, so [backup-restore.md](backup-restore.md) applies only in

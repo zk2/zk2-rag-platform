@@ -18,6 +18,21 @@
 	}
 }
 
+# Langfuse, when it is published under a name of its own. Caddy matches the
+# Host header, so the proxy in front can send both names to this same port and
+# the site blocks sort them out. Unset, the placeholder matches nothing and
+# Langfuse stays reachable only over an SSH tunnel.
+{$LANGFUSE_HOSTNAME:langfuse.invalid}:80 {
+	encode gzip
+
+	log {
+		output stdout
+		format console
+	}
+
+	reverse_proxy langfuse-web:3000
+}
+
 :80 {
 	encode gzip
 

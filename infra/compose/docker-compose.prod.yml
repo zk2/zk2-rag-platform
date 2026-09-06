@@ -144,6 +144,10 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    environment:
+      # Empty is the safe default: the site block then matches a name nobody
+      # can resolve, and Langfuse is reachable over an SSH tunnel only.
+      LANGFUSE_HOSTNAME: ${LANGFUSE_HOSTNAME:-langfuse.invalid}
     ports:
       # The only port that leaves this stack. Behind the host's own proxy,
       # ${HTTP_BIND} can be narrowed to the address that proxy comes from.
@@ -330,6 +334,11 @@ services:
     environment:
       <<: *langfuse-env
       NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:?LANGFUSE_NEXTAUTH_SECRET is required}
+      # Self-hosted Langfuse lets anybody register by default. The one account
+      # this deployment needs is created by LANGFUSE_INIT_* below, and traces
+      # carry prompts and retrieved document text - so the door closes behind
+      # it. Flip it to false only long enough to invite somebody.
+      AUTH_DISABLE_SIGNUP: ${LANGFUSE_DISABLE_SIGNUP:-true}
       # Presigned media URLs are opened by the browser, which reaches Langfuse
       # through the tunnel - so the address it gets handed has to be the
       # tunnel's, while the server keeps using the compose network.
