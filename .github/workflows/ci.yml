@@ -97,6 +97,11 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Pinned, not "latest": the action's own default was 8.24.3, which
+          # ignores the [[allowlists]] blocks in .gitleaks.toml and reported
+          # five test fixtures as leaks. A scanner whose behaviour moves under
+          # you is worse than an old one - upgrade deliberately, having run it.
+          GITLEAKS_VERSION: 8.30.1
       - uses: astral-sh/setup-uv@v3
         with:
           version: "0.5.4"
