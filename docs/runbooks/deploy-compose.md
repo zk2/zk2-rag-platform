@@ -116,14 +116,31 @@ has to happen before the older image starts.
 Nothing is published to the internet. Tunnel in:
 
 ```bash
+make obs-up      # opens all four forwards in the background
+make obs-status  # says whether they are open, and on which ports
+make obs-down    # closes them
+```
+
+Grafana on 3001 (admin plus `GRAFANA_ADMIN_PASSWORD`), Jaeger on 16686,
+Prometheus on 9090, Langfuse on 3030. The script keeps one multiplexed
+connection behind a control socket, which is what lets `down` close exactly
+what `up` opened rather than every ssh you happen to be running.
+
+It talks to the host named `zk-demo`, so put the address, the user and the key
+in `~/.ssh/config` under that name, or point `ZK2_OBS_HOST` at another entry:
+
+```bash
+ZK2_OBS_HOST=my-deploy-box make obs-up
+```
+
+By hand it is the same four forwards:
+
+```bash
 ssh -L 3001:127.0.0.1:3001 \
     -L 16686:127.0.0.1:16686 \
     -L 9090:127.0.0.1:9090 \
     -L 3030:127.0.0.1:3030 <server>
 ```
-
-Grafana on 3001 (admin plus `GRAFANA_ADMIN_PASSWORD`), Jaeger on 16686,
-Prometheus on 9090, Langfuse on 3030.
 
 Langfuse needs no click-through: `LANGFUSE_INIT_*` in the compose file creates
 the organization, the project and the very API keys already sitting in

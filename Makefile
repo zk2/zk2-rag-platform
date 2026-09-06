@@ -210,6 +210,24 @@ prod-seed-demo: ## Add demo documents, a bot, a pipeline and a golden set
 prod-deploy: prod-build prod-up ## Rebuild the images and roll the stack over
 	$(PROD_COMPOSE) ps
 
+## ── Observability tunnels ────────────────────────────────────
+
+# Grafana, Jaeger and Prometheus are loopback-bound on the deployment host.
+# Set ZK2_OBS_HOST, or name the host `zk-demo` in ~/.ssh/config.
+
+.PHONY: obs-up
+obs-up: ## Open the SSH tunnels to Grafana, Jaeger, Prometheus and Langfuse
+	@bash scripts/obs-tunnel.sh up
+
+.PHONY: obs-down
+obs-down: ## Close those tunnels
+	@bash scripts/obs-tunnel.sh down
+
+.PHONY: obs-status
+obs-status: ## Say whether the tunnels are open
+	@# Closed is an answer, not a failure of the target
+	@bash scripts/obs-tunnel.sh status || true
+
 ## ── Clean ────────────────────────────────────────────────────
 
 .PHONY: clean
