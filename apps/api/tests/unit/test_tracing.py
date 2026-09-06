@@ -161,3 +161,31 @@ async def test_a_broken_client_does_not_break_the_turn(
 async def test_flush_reaches_the_client(fake_client: FakeLangfuse) -> None:
     await flush_traces()
     assert fake_client.flushed is True
+
+
+def test_the_sampler_keeps_a_request_and_drops_the_plumbing() -> None:
+    """A trace should describe something somebody asked for.
+
+    Health checks, metric scrapes and a parentless Redis call are machinery on
+    a timer: two hundred identical traces an hour, and the real requests
+    nowhere in the first page of results.
+    """
+    from opentelemetry.sdk.trace.sampling import Decision
+    from opentelemetry.trace import SpanKind
+
+    from zk2.core.telemetry import _DropPlumbing
+
+    sampler = _DropPlumbing()
+
+    def decide(**kwargs: Any) -> Decision:
+        return sampler.should_sample(None, 1, kwargs.pop("name", "span"), **kwargs).decision
+
+    assert decide(kind=SpanKind.SERVER, attributes={"url.path": "/health"}) is Decision.DROP
+    assert decide(kind=SpanKind.SERVER, attributes={"url.path": "/metrics"}) is Decision.DROP
+    assert decide(name="LLEN", kind=SpanKind.CLIENT) is Decision.DROP
+    assert (
+        decide(kind=SpanKind.SERVER, attributes={"url.path": "/bots/1/chat"})
+        is Decision.RECORD_AND_SAMPLE
+    )
+    # The turn's own span: internal, no attributes, and the thing we came for
+    assert decide(name="rag.turn", kind=SpanKind.INTERNAL) is Decision.RECORD_AND_SAMPLE
