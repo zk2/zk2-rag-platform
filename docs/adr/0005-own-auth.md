@@ -18,8 +18,8 @@ codes, and an audit log entry for every security-relevant action.
 
 ## Consequences
 
-- Security work is visible in the repository, which is the point of a portfolio
-  project - and the reason this ADR exists at all
+- Security work is visible in the repository rather than delegated to a vendor,
+  which is the reason this ADR exists at all
 - Every mistake here is ours: rotation, replay, timing, lockout, token lifetime
   over a long-lived WebSocket
 - No per-MAU bill and no vendor lock-in

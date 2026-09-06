@@ -21,7 +21,7 @@ export default function Home() {
           </Link>
         </div>
         <p className="mt-12 text-sm text-slate-500">
-          Access is invite-only. Demo by Zeka.
+          Access is invite-only.
         </p>
       </div>
     </main>

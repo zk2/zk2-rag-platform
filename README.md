@@ -3,16 +3,16 @@
 Multi-tenant RAG platform: documents in, grounded answers out, with a visual
 pipeline editor, tool-using agents, evaluations and full observability.
 
-Built as a portfolio project - the interesting part is not that it works, but
-that every non-obvious decision is written down next to the code that made it.
+The interesting part is not that it works, but that every non-obvious
+decision is written down next to the code that made it.
 
 > **Status:** feature-complete through the planned slices (`v0.8`), running at
 > <https://rag-platform.reldava.com>. Access is invite-only by design - there is
-> no self-signup endpoint to find, so the demo is a link plus an invitation.
+> no self-signup endpoint to find, so getting in is a link plus an invitation.
 
-## What this demonstrates
+## What is here
 
-| Area | What is actually here |
+| Area | Implementation |
 |---|---|
 | **Async Python** | FastAPI, SQLAlchemy 2.0 async over asyncpg, Arq workers, 366 tests on testcontainers |
 | **RAG** | Hybrid retrieval (pgvector + Postgres full-text in the document's own language), RRF fusion, optional cross-encoder rerank, structure-aware chunking with breadcrumbs, citation parsing |

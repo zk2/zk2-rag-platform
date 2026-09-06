@@ -5,8 +5,8 @@
 
 ## Context
 
-The system is a public deployment of a portfolio project holding a database, an
-LLM budget and third-party API keys. Open registration on such a deployment
+The system is a public deployment holding a database, an LLM budget and
+third-party API keys. Open registration on such a deployment
 means anyone can burn tokens, upload arbitrary documents and probe the platform.
 
 ## Decision
