@@ -123,9 +123,20 @@ ssh -L 3001:127.0.0.1:3001 \
 ```
 
 Grafana on 3001 (admin plus `GRAFANA_ADMIN_PASSWORD`), Jaeger on 16686,
-Prometheus on 9090, Langfuse on 3030. Langfuse needs a project created in its
-UI once; put the resulting keys into `LANGFUSE_PUBLIC_KEY` and
-`LANGFUSE_SECRET_KEY` and restart the api and worker.
+Prometheus on 9090, Langfuse on 3030.
+
+Langfuse needs no click-through: `LANGFUSE_INIT_*` in the compose file creates
+the organization, the project and the very API keys already sitting in
+`.env.prod` - but only against an empty database, on the first start. Sign in
+with `LANGFUSE_ADMIN_EMAIL` and `LANGFUSE_ADMIN_PASSWORD`, which are Langfuse's
+own credentials and have nothing to do with the application's users.
+
+It is also four containers rather than one - `langfuse-web`, `langfuse-worker`,
+ClickHouse, MinIO and its own Redis - because from v3 onwards the SDK ships
+traces over OpenTelemetry into ClickHouse. Running the v2 image against a v3+
+SDK is the trap worth knowing: the client authenticates, reports no error the
+application would notice, and every span is answered with a 404 by an endpoint
+that does not exist. `Traces: No results` is the only symptom.
 
 To run without any of it: `make prod-up PROD_PROFILES=`, and empty
 `OTEL_EXPORTER_OTLP_ENDPOINT` and `LANGFUSE_HOST` in `.env.prod` - pointed at
@@ -160,3 +171,4 @@ a lost queue costs a re-index.
 | Bind mount reads as empty, host has SELinux | The mount lost its label. The compose file already asks for `z`; a manual `docker run` needs it too |
 | Chat connects then closes immediately | The proxy in front is not forwarding the WebSocket upgrade for `/api/ws/*` |
 | Invites never arrive | `EMAIL_PASSWORD` empty, or the sending domain's DNS is not verified at the provider |
+| Langfuse shows no traces | The SDK major must match the server major. Check `docker compose ... logs api | grep langfuse`: a `ValidationError` from `auth_check` or `Failed to export span batch code: 404` both mean the versions disagree |

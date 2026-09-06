@@ -200,6 +200,10 @@ services:
     ports:
       - "${OBS_BIND:-127.0.0.1}:16686:16686"
 
+  # Langfuse v4. The Python SDK sends over OpenTelemetry to /api/public/otel,
+  # which only exists from server v3 onwards - paired with the v2 image the app
+  # authenticates happily and every trace disappears. That is four containers
+  # of infrastructure for one feature, which is what the version buys.
   langfuse-db:
     image: postgres:16-alpine
     profiles: [obs]
@@ -209,28 +213,144 @@ services:
       POSTGRES_USER: langfuse
       POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD:?LANGFUSE_DB_PASSWORD is required}
     volumes:
-      - langfuse_data:/var/lib/postgresql/data
+      # Deliberately not the old `langfuse_data`: that volume holds a v2 schema
+      # and v4 will not migrate onto it. A fresh volume starts clean; the old
+      # one keeps whatever was there until somebody prunes it.
+      - langfuse_pg_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U langfuse"]
       interval: 10s
       timeout: 5s
       retries: 10
 
-  langfuse:
-    image: langfuse/langfuse:2
+  langfuse-clickhouse:
+    image: clickhouse/clickhouse-server:25.12
+    profiles: [obs]
+    restart: unless-stopped
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:?LANGFUSE_CLICKHOUSE_PASSWORD is required}
+    volumes:
+      - langfuse_clickhouse_data:/var/lib/clickhouse
+      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Event and media blobs. Nothing publishes it: only Langfuse itself reads and
+  # writes here, over the compose network.
+  langfuse-minio:
+    image: minio/minio:latest
+    profiles: [obs]
+    restart: unless-stopped
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: ${LANGFUSE_MINIO_PASSWORD:?LANGFUSE_MINIO_PASSWORD is required}
+    volumes:
+      - langfuse_minio_data:/data
+    ports:
+      # Only so a browser on the far end of the tunnel can follow a presigned
+      # media URL. 9090 is Prometheus's, hence 9092.
+      - "${OBS_BIND:-127.0.0.1}:9092:9000"
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Langfuse's own queue. Separate from the application's Redis on purpose:
+  # its BullMQ queues and our arq jobs have no business sharing an eviction
+  # policy, let alone a keyspace.
+  langfuse-redis:
+    image: redis:7-alpine
+    profiles: [obs]
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${LANGFUSE_REDIS_PASSWORD:?LANGFUSE_REDIS_PASSWORD is required}", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - langfuse_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  langfuse-worker:
+    image: docker.langfuse.com/langfuse/langfuse-worker:4
+    profiles: [obs]
+    restart: unless-stopped
+    environment: &langfuse-env
+      DATABASE_URL: postgresql://langfuse:${LANGFUSE_DB_PASSWORD:?LANGFUSE_DB_PASSWORD is required}@langfuse-db:5432/langfuse
+      NEXTAUTH_URL: ${LANGFUSE_PUBLIC_URL:-http://localhost:3030}
+      SALT: ${LANGFUSE_SALT:?LANGFUSE_SALT is required}
+      # Exactly 64 hex characters: openssl rand -hex 32
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:?LANGFUSE_ENCRYPTION_KEY is required}
+      TELEMETRY_ENABLED: "false"
+      CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
+      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:?LANGFUSE_CLICKHOUSE_PASSWORD is required}
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_MINIO_PASSWORD:?LANGFUSE_MINIO_PASSWORD is required}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_MINIO_PASSWORD:?LANGFUSE_MINIO_PASSWORD is required}
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+      REDIS_HOST: langfuse-redis
+      REDIS_PORT: "6379"
+      REDIS_AUTH: ${LANGFUSE_REDIS_PASSWORD:?LANGFUSE_REDIS_PASSWORD is required}
+    depends_on: &langfuse-depends-on
+      langfuse-db:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+
+  langfuse-web:
+    image: docker.langfuse.com/langfuse/langfuse:4
     profiles: [obs]
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://langfuse:${LANGFUSE_DB_PASSWORD:?LANGFUSE_DB_PASSWORD is required}@langfuse-db:5432/langfuse
-      NEXTAUTH_URL: ${LANGFUSE_PUBLIC_URL:-http://localhost:3030}
+      <<: *langfuse-env
       NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:?LANGFUSE_NEXTAUTH_SECRET is required}
-      SALT: ${LANGFUSE_SALT:?LANGFUSE_SALT is required}
-      TELEMETRY_ENABLED: "false"
+      # Presigned media URLs are opened by the browser, which reaches Langfuse
+      # through the tunnel - so the address it gets handed has to be the
+      # tunnel's, while the server keeps using the compose network.
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: ${LANGFUSE_MINIO_PUBLIC_URL:-http://localhost:9092}
+      LANGFUSE_S3_MEDIA_UPLOAD_INTERNAL_ENDPOINT: http://langfuse-minio:9000
+      # Applied only against an empty database, on the very first start. It
+      # creates the organization, the project and the API keys the application
+      # already has in .env.prod, so there is no click-through in the UI and no
+      # second restart of api and worker to pick up freshly minted keys.
+      LANGFUSE_INIT_ORG_ID: zk2
+      LANGFUSE_INIT_ORG_NAME: ZK2
+      LANGFUSE_INIT_PROJECT_ID: zk2-rag-platform
+      LANGFUSE_INIT_PROJECT_NAME: zk2-rag-platform
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_ADMIN_EMAIL:-}
+      LANGFUSE_INIT_USER_NAME: ${LANGFUSE_ADMIN_EMAIL:-}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_ADMIN_PASSWORD:-}
     ports:
       - "${OBS_BIND:-127.0.0.1}:3030:3000"
-    depends_on:
-      langfuse-db:
-        condition: service_healthy
+    depends_on: *langfuse-depends-on
 
 volumes:
   postgres_data:
@@ -241,4 +361,8 @@ volumes:
   caddy_config:
   prometheus_data:
   grafana_data:
-  langfuse_data:
+  langfuse_pg_data:
+  langfuse_clickhouse_data:
+  langfuse_clickhouse_logs:
+  langfuse_minio_data:
+  langfuse_redis_data:
