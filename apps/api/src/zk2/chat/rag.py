@@ -110,6 +110,9 @@ def _citations_event(cited: list[dict[str, Any]]) -> StreamEvent:
                     "source_id": c["source_id"],
                     "name": c["name"],
                     "ordinal": c["ordinal"],
+                    "page": c.get("page"),
+                    "page_end": c.get("page_end"),
+                    "section": c.get("section") or [],
                     "marker": c["marker"],
                 }
                 for c in cited

@@ -5,9 +5,16 @@ the model without rebuilding the index does not raise anything - it just
 silently returns nothing, which is the worst way for a search feature to fail.
 So the settings API reports how much of the corpus is stale, and reindexing is
 an explicit, visible operation.
+
+Chunking is the same kind of setting: cutting documents differently changes
+every stored chunk, and so does a shipped change to the chunker itself. All
+three - model, chunking settings, chunker version - feed one definition of
+stale, because a corpus indexed under any older answer needs the same redoing.
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 import structlog
 from arq import ArqRedis
@@ -20,18 +27,66 @@ from zk2.llm.catalog import get_catalog
 from zk2.llm.registry import embedding_model_support
 from zk2.orgs.models import OrgSettings
 from zk2.orgs.schemas import EmbeddingSettingsDto
+from zk2.sources.chunking import CHUNKER_VERSION, ChunkStrategy
 
 logger = structlog.get_logger()
 
-_STALE_COUNTS_SQL = """
+# A source is stale when anything about how it was indexed differs from what
+# the organization is configured for now. `sources.metadata` records the chunking
+# it was built with; a row that predates that stamp has no key at all, which
+# compares unequal and is exactly right - it was built by an older chunker.
+#
+# One query answers it for every source, and the callers count or filter the
+# rows themselves: composing the predicate into two larger statements would
+# mean building SQL by interpolation, which this codebase does not do.
+_SOURCE_INDEX_STATE_SQL = """
     SELECT
-        count(DISTINCT s.id) FILTER (WHERE se.id IS NOT NULL)                      AS indexed,
-        count(DISTINCT s.id) FILTER (WHERE se.id IS NOT NULL AND se.model <> :model) AS stale
+        s.id,
+        coalesce(bool_or(se.id IS NOT NULL), false)      AS indexed,
+        coalesce(bool_or(se.model <> :model), false)     AS model_stale,
+        (
+            coalesce((s.metadata ->> 'chunker_version')::int, 0) <> :chunker_version
+            OR coalesce((s.metadata ->> 'chunk_size')::int, 0) <> :chunk_size
+            OR coalesce((s.metadata ->> 'chunk_overlap')::int, -1) <> :chunk_overlap
+            OR coalesce(s.metadata ->> 'chunk_strategy', '') <> :chunk_strategy
+        )                                                AS settings_stale
     FROM sources s
     JOIN source_chunks sc ON sc.source_id = s.id
     LEFT JOIN source_embeddings se ON se.chunk_id = sc.id
     WHERE s.org_id = :org
+    GROUP BY s.id, s.metadata
 """
+
+
+@dataclass(frozen=True, slots=True)
+class _SourceState:
+    id: int
+    indexed: bool
+    stale: bool
+
+
+async def _index_state(
+    db: AsyncSession, *, org_id: int, settings: OrgSettings
+) -> list[_SourceState]:
+    rows = await db.execute(
+        text(_SOURCE_INDEX_STATE_SQL),
+        {
+            "org": org_id,
+            "model": settings.embedding_model,
+            "chunker_version": CHUNKER_VERSION,
+            "chunk_size": settings.chunk_size,
+            "chunk_overlap": settings.chunk_overlap,
+            "chunk_strategy": settings.chunk_strategy,
+        },
+    )
+    return [
+        _SourceState(
+            id=row.id,
+            indexed=row.indexed,
+            stale=row.indexed and (row.model_stale or row.settings_stale),
+        )
+        for row in rows.all()
+    ]
 
 
 async def get_org_settings(db: AsyncSession, *, org_id: int) -> OrgSettings:
@@ -46,21 +101,20 @@ async def get_org_settings(db: AsyncSession, *, org_id: int) -> OrgSettings:
 
 async def describe_embedding_settings(db: AsyncSession, *, org_id: int) -> EmbeddingSettingsDto:
     settings = await get_org_settings(db, org_id=org_id)
-    counts = (
-        await db.execute(
-            text(_STALE_COUNTS_SQL), {"org": org_id, "model": settings.embedding_model}
-        )
-    ).one()
+    state = await _index_state(db, org_id=org_id, settings=settings)
     spec = get_catalog().embedding_model(settings.embedding_model)
     return EmbeddingSettingsDto(
         embedding_provider=settings.embedding_provider,
         embedding_model=settings.embedding_model,
+        chunk_size=settings.chunk_size,
+        chunk_overlap=settings.chunk_overlap,
+        chunk_strategy=ChunkStrategy(settings.chunk_strategy),
         # The width vectors are stored at, not the model's native size: a
         # 3072-wide model is asked to truncate, and reporting 3072 here
         # described an index that has never existed. See ADR-0004.
         dimensions=get_settings().ingest.embedding_dimensions if spec else 0,
-        indexed_sources=counts.indexed or 0,
-        stale_sources=counts.stale or 0,
+        indexed_sources=sum(1 for row in state if row.indexed),
+        stale_sources=sum(1 for row in state if row.stale),
     )
 
 
@@ -84,6 +138,33 @@ async def update_embedding_settings(
     return await describe_embedding_settings(db, org_id=org_id)
 
 
+async def update_chunking_settings(
+    db: AsyncSession,
+    *,
+    org_id: int,
+    chunk_size: int,
+    chunk_overlap: int,
+    chunk_strategy: ChunkStrategy,
+) -> EmbeddingSettingsDto:
+    """Change how documents are cut. Every existing chunk becomes stale."""
+    if chunk_overlap >= chunk_size:
+        raise ValidationError("chunk_overlap must be smaller than chunk_size")
+
+    settings = await get_org_settings(db, org_id=org_id)
+    settings.chunk_size = chunk_size
+    settings.chunk_overlap = chunk_overlap
+    settings.chunk_strategy = chunk_strategy.value
+    await db.flush()
+    logger.info(
+        "org.chunking_changed",
+        org_id=org_id,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        strategy=chunk_strategy.value,
+    )
+    return await describe_embedding_settings(db, org_id=org_id)
+
+
 async def queue_reindex(
     db: AsyncSession, arq: ArqRedis | None, *, org_id: int, only_stale: bool = False
 ) -> int:
@@ -91,23 +172,22 @@ async def queue_reindex(
     from zk2.sources.service import enqueue_ingest  # noqa: PLC0415  (cycle: service -> orgs)
 
     settings = await get_org_settings(db, org_id=org_id)
-    query = """
-        SELECT DISTINCT s.id
-        FROM sources s
-        WHERE s.org_id = :org AND s.type <> 'directory'
-    """
-    params: dict[str, object] = {"org": org_id}
     if only_stale:
-        query += """
-          AND EXISTS (
-              SELECT 1 FROM source_chunks sc
-              JOIN source_embeddings se ON se.chunk_id = sc.id
-              WHERE sc.source_id = s.id AND se.model <> :model
-          )
-        """
-        params["model"] = settings.embedding_model
+        source_ids = [
+            row.id for row in await _index_state(db, org_id=org_id, settings=settings) if row.stale
+        ]
+    else:
+        rows = await db.execute(
+            text(
+                """
+                SELECT id FROM sources
+                WHERE org_id = :org AND type <> 'directory'
+                """
+            ),
+            {"org": org_id},
+        )
+        source_ids = [row.id for row in rows.all()]
 
-    source_ids = [row.id for row in (await db.execute(text(query), params)).all()]
     if not source_ids:
         return 0
 

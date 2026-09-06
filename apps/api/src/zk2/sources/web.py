@@ -6,10 +6,12 @@ import asyncio
 from dataclasses import dataclass
 
 import structlog
-from selectolax.parser import HTMLParser
 
 from zk2.config import get_settings
 from zk2.core.net import assert_url_allowed, fetch_safely
+from zk2.sources.loaders import parse_html
+from zk2.sources.parsed import ParsedDocument, Segment
+from zk2.sources.text_clean import clean_text
 
 logger = structlog.get_logger()
 
@@ -19,8 +21,13 @@ class FetchedPage:
     url: str
     final_url: str
     title: str
-    text: str
+    document: ParsedDocument
     content_type: str
+
+    @property
+    def text(self) -> str:
+        """The page as plain text, for callers that want no structure."""
+        return self.document.text
 
 
 async def fetch_url(url: str, *, timeout: float | None = None) -> FetchedPage:
@@ -32,20 +39,23 @@ async def fetch_url(url: str, *, timeout: float | None = None) -> FetchedPage:
 
     if "html" not in ct:
         # Plain text / non-HTML payloads
-        text = body.decode("utf-8", errors="replace")
-        return FetchedPage(url=url, final_url=final, title=url, text=text, content_type=ct)
+        text = clean_text(body.decode("utf-8", errors="replace"))
+        return FetchedPage(
+            url=url,
+            final_url=final,
+            title=url,
+            document=ParsedDocument(segments=[Segment(text=text)] if text else []),
+            content_type=ct,
+        )
 
-    tree = HTMLParser(body.decode("utf-8", errors="replace"))
-    for selector in ("script", "style", "noscript", "iframe", "header", "footer", "nav"):
-        for node in tree.css(selector):
-            node.decompose()
-
-    title_node = tree.css_first("title")
-    title = title_node.text(strip=True) if title_node else url
-
-    body_node = tree.body
-    text = body_node.text(separator="\n", strip=True) if body_node else tree.text(strip=True)
-    return FetchedPage(url=url, final_url=final, title=title, text=text, content_type=ct)
+    document, title = parse_html(body.decode("utf-8", errors="replace"))
+    return FetchedPage(
+        url=url,
+        final_url=final,
+        title=title or url,
+        document=document,
+        content_type=ct,
+    )
 
 
 async def discover_sitemap(base_url: str, *, limit: int | None = None) -> list[str]:

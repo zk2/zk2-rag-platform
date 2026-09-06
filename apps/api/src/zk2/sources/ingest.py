@@ -16,7 +16,9 @@ from zk2.core.quota import KeySource, record_system_tokens
 from zk2.core.storage import get_storage
 from zk2.llm.catalog import embedding_cost
 from zk2.llm.registry import get_embedding_provider, key_source_for
-from zk2.sources.chunking import chunk_document
+from zk2.orgs.models import OrgSettings
+from zk2.orgs.service import get_org_settings
+from zk2.sources.chunking import CHUNKER_VERSION, Chunk, ChunkStrategy, chunk_document
 from zk2.sources.language import detect_language, search_config
 from zk2.sources.loaders import load_bytes
 from zk2.sources.models import (
@@ -26,6 +28,7 @@ from zk2.sources.models import (
     SourceStatus,
     SourceType,
 )
+from zk2.sources.parsed import ParsedDocument
 from zk2.sources.web import fetch_url
 
 logger = structlog.get_logger()
@@ -47,7 +50,8 @@ async def ingest_source(db: AsyncSession, *, source_id: int) -> None:
     started = time.perf_counter()
 
     try:
-        text_content = await _extract(source)
+        document = await _extract(source)
+        text_content = document.text
         if not text_content.strip():
             raise ValueError("Extracted content is empty")
 
@@ -56,8 +60,15 @@ async def ingest_source(db: AsyncSession, *, source_id: int) -> None:
 
         await _clear_existing_chunks(db, source_id=source_id)
 
+        org_settings = await get_org_settings(db, org_id=source.org_id)
         # The document name becomes the first breadcrumb on every chunk
-        chunks = chunk_document(text_content, title=source.name)
+        chunks = chunk_document(
+            document,
+            title=source.name,
+            chunk_tokens=org_settings.chunk_size,
+            overlap_tokens=org_settings.chunk_overlap,
+            strategy=ChunkStrategy(org_settings.chunk_strategy),
+        )
         if not chunks:
             raise ValueError("Chunking produced no chunks")
 
@@ -69,7 +80,9 @@ async def ingest_source(db: AsyncSession, *, source_id: int) -> None:
                 tokens=c.tokens,
                 meta={
                     "original_name": source.name,
-                    "heading_path": list(c.heading_path),
+                    "section": list(c.section),
+                    "page": c.page,
+                    "page_end": c.page_end,
                 },
             )
             for c in chunks
@@ -115,22 +128,16 @@ async def ingest_source(db: AsyncSession, *, source_id: int) -> None:
             tokens=sum(c.tokens for c in chunks),
         )
 
-        source.status = SourceStatus.READY
-        source.updated_at = datetime.now(UTC)
+        _mark_ready(source, document=document, chunks=chunks, settings=org_settings)
         ingest_documents_total.labels(status="ready").inc()
         ingest_chunks_total.inc(len(chunk_rows))
         ingest_duration_seconds.observe(time.perf_counter() - started)
-        meta: dict[str, Any] = dict(source.meta or {})
-        meta["chunks"] = len(chunk_rows)
-        meta["lang"] = source.lang
-        meta["tokens"] = sum(c.tokens for c in chunks)
-        source.meta = meta
         logger.info(
             "ingest.ok",
             source_id=source_id,
             name=source.name,
             chunks=len(chunk_rows),
-            tokens=meta["tokens"],
+            tokens=source.meta["tokens"],
         )
     except Exception as exc:
         source.status = SourceStatus.FAILED
@@ -141,7 +148,34 @@ async def ingest_source(db: AsyncSession, *, source_id: int) -> None:
         logger.exception("ingest.failed", source_id=source_id)
 
 
-async def _extract(source: Source) -> str:
+def _mark_ready(
+    source: Source,
+    *,
+    document: ParsedDocument,
+    chunks: list[Chunk],
+    settings: OrgSettings,
+) -> None:
+    """Record what this source now holds, and how it was built.
+
+    The chunking stamp is what lets a later settings change - or a shipped
+    change to the chunker itself - tell that this source needs redoing.
+    """
+    source.status = SourceStatus.READY
+    source.updated_at = datetime.now(UTC)
+    meta: dict[str, Any] = dict(source.meta or {})
+    meta["chunks"] = len(chunks)
+    meta["lang"] = source.lang
+    meta["tokens"] = sum(c.tokens for c in chunks)
+    if document.page_count is not None:
+        meta["pages"] = document.page_count
+    meta["chunker_version"] = CHUNKER_VERSION
+    meta["chunk_size"] = settings.chunk_size
+    meta["chunk_overlap"] = settings.chunk_overlap
+    meta["chunk_strategy"] = settings.chunk_strategy
+    source.meta = meta
+
+
+async def _extract(source: Source) -> ParsedDocument:
     if source.type == SourceType.FILE:
         key = (source.meta or {}).get("storage_key")
         if not key:
@@ -152,7 +186,7 @@ async def _extract(source: Source) -> str:
     if source.type == SourceType.WEB:
         url = (source.meta or {}).get("url") or source.name
         page = await fetch_url(url)
-        return page.text
+        return page.document
 
     raise ValueError(f"Unsupported source type for ingest: {source.type}")
 

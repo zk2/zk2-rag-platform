@@ -153,3 +153,48 @@ async def test_reindexing_a_directory_is_rejected(owner_client: AsyncClient) -> 
     resp = await owner_client.post(f"/sources/{folder['id']}/reindex")
     assert resp.status_code == 422
     assert "directory" in resp.json()["error"]["message"].lower()
+
+
+async def test_chunking_settings_are_returned_with_the_embedding_ones(
+    owner_client: AsyncClient,
+) -> None:
+    body = (await owner_client.get("/settings/embedding")).json()
+    assert body["chunk_size"] == 400
+    assert body["chunk_overlap"] == 40
+    assert body["chunk_strategy"] == "semantic"
+
+
+async def test_changing_chunking_makes_the_corpus_stale(
+    owner_client: AsyncClient, db: AsyncSession, org_owner: dict[str, Any]
+) -> None:
+    """Cutting documents differently invalidates the index exactly as a new model does."""
+    await _ingest(db, org_id=org_owner["org_id"])
+    await db.execute(text("UPDATE source_embeddings SET model = 'text-embedding-3-small'"))
+    await db.commit()
+    assert (await owner_client.get("/settings/embedding")).json()["stale_sources"] == 0
+
+    changed = await owner_client.put(
+        "/settings/chunking",
+        json={"chunk_size": 800, "chunk_overlap": 80, "chunk_strategy": "semantic"},
+    )
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["chunk_size"] == 800
+    assert changed.json()["stale_sources"] == 1
+
+    assert await queue_reindex(db, None, org_id=org_owner["org_id"], only_stale=True) == 1
+
+
+async def test_overlap_must_be_smaller_than_the_chunk(owner_client: AsyncClient) -> None:
+    resp = await owner_client.put(
+        "/settings/chunking",
+        json={"chunk_size": 400, "chunk_overlap": 400, "chunk_strategy": "semantic"},
+    )
+    assert resp.status_code == 422
+
+
+async def test_an_unknown_strategy_is_rejected(owner_client: AsyncClient) -> None:
+    resp = await owner_client.put(
+        "/settings/chunking",
+        json={"chunk_size": 400, "chunk_overlap": 40, "chunk_strategy": "vibes"},
+    )
+    assert resp.status_code == 422

@@ -13,6 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from zk2.retrieval.base import RetrievedChunk
+from zk2.retrieval.location import chunk_location as _location
 
 SQL = """
     WITH allowed AS (
@@ -29,6 +30,7 @@ SQL = """
            s.name       AS source_name,
            sc.ordinal   AS ordinal,
            sc.text      AS text,
+           sc.metadata  AS meta,
            ts_rank_cd(b.tsv, plainto_tsquery(CAST(a.lang_config AS regconfig), :q)) AS rank
     FROM source_bm25 b
     JOIN source_chunks sc ON sc.id = b.chunk_id
@@ -63,6 +65,7 @@ async def bm25_search(
             source_name=r.source_name,
             ordinal=r.ordinal,
             text=r.text,
+            **_location(r.meta),
             score=float(r.rank),
             retriever="bm25",
         )

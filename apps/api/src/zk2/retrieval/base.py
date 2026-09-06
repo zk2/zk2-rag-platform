@@ -21,3 +21,14 @@ class RetrievedChunk:
     retriever: str
     # Which retrievers surfaced this chunk; filled in by fusion
     matched_by: tuple[str, ...] = field(default=())
+    # Where in the document it sits, for a citation that can be looked up
+    page: int | None = None
+    page_end: int | None = None
+    section: tuple[str, ...] = field(default=())
+
+    @property
+    def location(self) -> str:
+        """Human-readable position: the page, or the heading path, or neither."""
+        if self.page is not None:
+            return f"pages {self.page}-{self.page_end}" if self.page_end else f"page {self.page}"
+        return " > ".join(self.section)

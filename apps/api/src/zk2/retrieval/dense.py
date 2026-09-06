@@ -10,6 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from zk2.retrieval.base import RetrievedChunk
+from zk2.retrieval.location import chunk_location as _location
 
 SQL = """
     WITH allowed AS (
@@ -26,6 +27,7 @@ SQL = """
            s.name         AS source_name,
            sc.ordinal     AS ordinal,
            sc.text        AS text,
+           sc.metadata    AS meta,
            (se.embedding <=> :query_vec) AS distance
     FROM source_embeddings se
     JOIN source_chunks sc ON sc.id = se.chunk_id
@@ -67,6 +69,7 @@ async def dense_search(
             source_name=r.source_name,
             ordinal=r.ordinal,
             text=r.text,
+            **_location(r.meta),
             # Cosine distance in [0, 2]; similarity is the useful direction
             score=1.0 - float(r.distance),
             retriever="dense",

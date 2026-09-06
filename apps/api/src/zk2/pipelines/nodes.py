@@ -193,9 +193,11 @@ class ContextBuilder(Node):
         used_tokens = 0
         for chunk in state.selected:
             marker = len(state.context_chunks) + 1
-            snippet = (
-                f"[{marker}] source: {chunk.source_name} (chunk {chunk.ordinal})\n{chunk.text}"
-            )
+            # The header names where the passage sits, because that is what the
+            # answer has to be able to cite: "page 12" can be checked, "chunk 7"
+            # can only be taken on faith.
+            where = chunk.location or f"chunk {chunk.ordinal}"
+            snippet = f"[{marker}] source: {chunk.source_name} ({where})\n{chunk.text}"
             tokens = count_tokens(snippet)
             if used_tokens + tokens > config.token_budget:
                 break
@@ -208,6 +210,9 @@ class ContextBuilder(Node):
                     "source_id": chunk.source_id,
                     "name": chunk.source_name,
                     "ordinal": chunk.ordinal,
+                    "page": chunk.page,
+                    "page_end": chunk.page_end,
+                    "section": list(chunk.section),
                     "cited": False,
                 }
             )
@@ -221,6 +226,9 @@ class ContextBuilder(Node):
                             "source_id": c.source_id,
                             "name": c.source_name,
                             "ordinal": c.ordinal,
+                            "page": c.page,
+                            "page_end": c.page_end,
+                            "section": list(c.section),
                             "score": round(c.score, 6),
                             "matched_by": list(c.matched_by) or [c.retriever],
                         }

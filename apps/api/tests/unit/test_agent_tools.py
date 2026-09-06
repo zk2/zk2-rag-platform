@@ -56,6 +56,7 @@ async def test_fetch_url_refuses_private_addresses(monkeypatch: pytest.MonkeyPat
 
 
 async def test_fetch_url_returns_readable_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    from zk2.sources.parsed import ParsedDocument, Segment
     from zk2.sources.web import FetchedPage
 
     async def _fake(*_args: object, **_kwargs: object) -> FetchedPage:
@@ -63,7 +64,7 @@ async def test_fetch_url_returns_readable_text(monkeypatch: pytest.MonkeyPatch) 
             url="https://example.com",
             final_url="https://example.com",
             title="Doc",
-            text="Body text",
+            document=ParsedDocument(segments=[Segment(text="Body text")]),
             content_type="text/html",
         )
 
@@ -72,6 +73,7 @@ async def test_fetch_url_returns_readable_text(monkeypatch: pytest.MonkeyPatch) 
 
 
 async def test_long_tool_output_is_truncated(monkeypatch: pytest.MonkeyPatch) -> None:
+    from zk2.sources.parsed import ParsedDocument, Segment
     from zk2.sources.web import FetchedPage
 
     async def _fake(*_args: object, **_kwargs: object) -> FetchedPage:
@@ -79,7 +81,7 @@ async def test_long_tool_output_is_truncated(monkeypatch: pytest.MonkeyPatch) ->
             url="https://example.com",
             final_url="https://example.com",
             title="Doc",
-            text="x" * (MAX_TOOL_OUTPUT_CHARS * 2),
+            document=ParsedDocument(segments=[Segment(text="x" * (MAX_TOOL_OUTPUT_CHARS * 2))]),
             content_type="text/html",
         )
 

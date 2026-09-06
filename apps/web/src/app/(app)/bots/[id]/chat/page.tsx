@@ -16,6 +16,9 @@ type Msg = {
     source_id: number;
     name: string;
     ordinal: number;
+    page?: number | null;
+    page_end?: number | null;
+    section?: string[];
     score?: number;
     matched_by?: string[];
     // Set once the answer is complete: did the model actually cite this passage
@@ -262,6 +265,17 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
 }
 
 /** Compact marker for which retriever surfaced a chunk. */
+/**
+ * Where a retrieved passage sits, said the way a reader can check it. A page
+ * number can be turned to; "chunk 7" can only be believed.
+ */
+function passageLabel(s: { ordinal: number; page?: number | null; page_end?: number | null }): string {
+  if (typeof s.page === "number") {
+    return s.page_end && s.page_end !== s.page ? `pp. ${s.page}-${s.page_end}` : `p. ${s.page}`;
+  }
+  return `#${s.ordinal}`;
+}
+
 function retrieverBadge(retriever: string): string {
   if (retriever === "dense") return "V";
   if (retriever === "bm25") return "T";
@@ -316,11 +330,17 @@ function MessageBubble({ msg }: { msg: Msg }) {
                     ? "text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-300 px-1.5 py-0.5 rounded font-medium"
                     : "text-[10px] bg-slate-50 text-slate-500 border border-slate-200 px-1.5 py-0.5 rounded"
                 }
-                title={`${s.cited ? "cited in the answer" : "retrieved, not cited"} · score ${
-                  s.score?.toFixed(4) ?? "?"
-                } · found by ${s.matched_by?.join(" + ") ?? "retrieval"}`}
+                title={[
+                  s.cited ? "cited in the answer" : "retrieved, not cited",
+                  s.section?.length ? s.section.join(" > ") : null,
+                  `score ${s.score?.toFixed(4) ?? "?"}`,
+                  `found by ${s.matched_by?.join(" + ") ?? "retrieval"}`,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
               >
-                {s.name}#{s.ordinal}
+                {s.name}
+                <span className="opacity-70"> {passageLabel(s)}</span>
                 {s.matched_by && s.matched_by.length > 0 && (
                   <span className="ml-1 opacity-70">
                     {s.matched_by.map(retrieverBadge).join("")}

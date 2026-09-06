@@ -14,6 +14,7 @@ rank 1 and rank 2 does not dominate agreement between retrievers.
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from dataclasses import replace
 
 from zk2.retrieval.base import RetrievedChunk
 
@@ -38,13 +39,11 @@ def reciprocal_rank_fusion(
             if chunk.retriever not in retrievers:
                 retrievers.append(chunk.retriever)
 
+    # Copied rather than rebuilt field by field: a chunk carries where it came
+    # from, and listing the fields here is how that quietly gets dropped.
     fused = [
-        RetrievedChunk(
-            chunk_id=chunk_id,
-            source_id=best[chunk_id].source_id,
-            source_name=best[chunk_id].source_name,
-            ordinal=best[chunk_id].ordinal,
-            text=best[chunk_id].text,
+        replace(
+            best[chunk_id],
             score=score,
             retriever="rrf",
             matched_by=tuple(matched[chunk_id]),

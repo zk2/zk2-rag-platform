@@ -38,6 +38,7 @@ export default function ProvidersPage() {
         </CardContent>
       </Card>
       <EmbeddingCard />
+      <ChunkingCard />
     </div>
   );
 }
@@ -95,23 +96,33 @@ function AllowanceBanner() {
   );
 }
 
+type ChunkStrategy = "semantic" | "per-unit" | "fixed";
+
 type EmbeddingSettings = {
   embedding_provider: string;
   embedding_model: string;
   dimensions: number;
+  chunk_size: number;
+  chunk_overlap: number;
+  chunk_strategy: ChunkStrategy;
   stale_sources: number;
   indexed_sources: number;
 };
 
-function EmbeddingCard() {
-  const qc = useQueryClient();
-  const catalog = useCatalog();
-  const settings = useQuery({
+/** Everything that decides how the corpus is indexed, and what is out of date. */
+function useIndexingSettings() {
+  return useQuery({
     queryKey: ["embedding-settings"],
     queryFn: () => api.get<EmbeddingSettings>("/settings/embedding"),
     // While a reindex runs, sources move back to ready one by one
     refetchInterval: (q) => (q.state.data && q.state.data.stale_sources > 0 ? 5000 : false),
   });
+}
+
+function EmbeddingCard() {
+  const qc = useQueryClient();
+  const catalog = useCatalog();
+  const settings = useIndexingSettings();
   const [model, setModel] = useState<string | null>(null);
   const current = settings.data;
   const chosen = model ?? current?.embedding_model ?? "";
@@ -187,11 +198,12 @@ function EmbeddingCard() {
               {current.indexed_sources} indexed source{current.indexed_sources === 1 ? "" : "s"}
               {current.stale_sources > 0 ? (
                 <>
-                  , <strong className="text-amber-700">{current.stale_sources}</strong> built with a
-                  different model and invisible to search until reindexed.
+                  , <strong className="text-amber-700">{current.stale_sources}</strong> built with
+                  different settings - a different model, different chunking, or an older version
+                  of the chunker - and out of step with search until reindexed.
                 </>
               ) : (
-                <> - all built with the current model.</>
+                <> - all built with the current settings.</>
               )}
             </div>
             <div className="flex gap-2">
@@ -217,6 +229,135 @@ function EmbeddingCard() {
             )}
           </div>
         )}
+
+        {error && <p className="text-xs text-red-600">{error.message}</p>}
+      </CardContent>
+    </Card>
+  );
+}
+
+const STRATEGIES: { id: ChunkStrategy; label: string; hint: string }[] = [
+  {
+    id: "semantic",
+    label: "Semantic",
+    hint: "Pack neighbouring sections up to the budget, split only what is still too big.",
+  },
+  {
+    id: "per-unit",
+    label: "One per section",
+    hint: "One chunk per page or heading. Pins a citation exactly, at the cost of small chunks.",
+  },
+  {
+    id: "fixed",
+    label: "Fixed size",
+    hint: "Ignore structure and cut every N tokens. For machine output where headings mean nothing.",
+  },
+];
+
+function ChunkingCard() {
+  const qc = useQueryClient();
+  const settings = useIndexingSettings();
+  const current = settings.data;
+  const [size, setSize] = useState<number | null>(null);
+  const [overlap, setOverlap] = useState<number | null>(null);
+  const [strategy, setStrategy] = useState<ChunkStrategy | null>(null);
+
+  const chosenSize = size ?? current?.chunk_size ?? 400;
+  const chosenOverlap = overlap ?? current?.chunk_overlap ?? 40;
+  const chosenStrategy = strategy ?? current?.chunk_strategy ?? "semantic";
+
+  const save = useMutation({
+    mutationFn: () =>
+      api.put<EmbeddingSettings>("/settings/chunking", {
+        chunk_size: chosenSize,
+        chunk_overlap: chosenOverlap,
+        chunk_strategy: chosenStrategy,
+      }),
+    onSuccess: () => {
+      setSize(null);
+      setOverlap(null);
+      setStrategy(null);
+      qc.invalidateQueries({ queryKey: ["embedding-settings"] });
+    },
+  });
+
+  const dirty =
+    !!current &&
+    (chosenSize !== current.chunk_size ||
+      chosenOverlap !== current.chunk_overlap ||
+      chosenStrategy !== current.chunk_strategy);
+  const valid = chosenOverlap < chosenSize;
+  const error = save.error as Error | null;
+
+  return (
+    <Card>
+      <CardHeader><CardTitle>Chunking</CardTitle></CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-slate-500">
+          How documents are cut before they are embedded. A chunk is what retrieval can return and
+          what the answer can cite, so this decides what the bot is able to find at all. Sources
+          belong to the organization and are shared between bots, so there is one setting for the
+          whole corpus.
+        </p>
+        <p className="text-sm text-slate-500">
+          Changing this does not re-cut anything on its own: existing chunks stay until a reindex
+          runs, and until then they show as out of date above.
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div>
+            <Label htmlFor="chunk-strategy">Strategy</Label>
+            <select
+              id="chunk-strategy"
+              value={chosenStrategy}
+              onChange={(e) => setStrategy(e.target.value as ChunkStrategy)}
+              className="w-full h-9 rounded border border-slate-300 px-2 text-sm bg-white"
+            >
+              {STRATEGIES.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <Label htmlFor="chunk-size">Target size (tokens)</Label>
+            <Input
+              id="chunk-size"
+              type="number"
+              min={100}
+              max={2000}
+              value={chosenSize}
+              onChange={(e) => setSize(Number(e.target.value))}
+            />
+          </div>
+          <div>
+            <Label htmlFor="chunk-overlap">Overlap (tokens)</Label>
+            <Input
+              id="chunk-overlap"
+              type="number"
+              min={0}
+              max={2000}
+              value={chosenOverlap}
+              onChange={(e) => setOverlap(Number(e.target.value))}
+            />
+          </div>
+        </div>
+
+        <p className="text-xs text-slate-500">
+          {STRATEGIES.find((s) => s.id === chosenStrategy)?.hint} Overlap is only used where a
+          passage had to be cut mid-prose; packing boundaries fall between whole sections and need
+          none.
+        </p>
+
+        <div className="flex items-center gap-3">
+          <Button onClick={() => save.mutate()} disabled={!dirty || !valid || save.isPending}>
+            {save.isPending ? "Saving…" : "Save chunking"}
+          </Button>
+          {!valid && (
+            <span className="text-xs text-red-600">Overlap must be smaller than the size.</span>
+          )}
+        </div>
 
         {error && <p className="text-xs text-red-600">{error.message}</p>}
       </CardContent>

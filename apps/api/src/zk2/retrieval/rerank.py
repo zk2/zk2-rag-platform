@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from dataclasses import replace
 from typing import Any, Protocol
 
 import structlog
@@ -96,12 +97,8 @@ async def rerank(
         return chunks[:top_k] if top_k else chunks
 
     ranked = [
-        RetrievedChunk(
-            chunk_id=chunk.chunk_id,
-            source_id=chunk.source_id,
-            source_name=chunk.source_name,
-            ordinal=chunk.ordinal,
-            text=chunk.text,
+        replace(
+            chunk,
             score=score,
             retriever="rerank",
             matched_by=chunk.matched_by or (chunk.retriever,),

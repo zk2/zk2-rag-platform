@@ -20,3 +20,4 @@ and the alternatives that were actually considered.
 | [0012](0012-agent-runtime.md) | LangGraph for the agent loop, with accounting kept in-project | Accepted |
 | [0013](0013-shared-key-allowance.md) | A shared-key allowance instead of billing | Accepted |
 | [0014](0014-own-eval-metrics.md) | Eval metrics implemented in-project rather than Ragas | Accepted |
+| [0015](0015-structured-ingestion.md) | Structure comes from the format, and chunks are packed to a budget | Accepted |

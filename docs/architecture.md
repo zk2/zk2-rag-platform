@@ -148,7 +148,7 @@ sequenceDiagram
   W->>Q: take job
   W->>S: read bytes
   W->>W: extract text, detect language
-  W->>W: structural chunking with breadcrumbs
+  W->>W: parse into sections and pages, pack to the chunk budget
   W->>DB: chunks
   W->>W: embeddings in batches
   W->>DB: vectors + tsvector in the document's language

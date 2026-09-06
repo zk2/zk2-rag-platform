@@ -12,17 +12,23 @@ from zk2.auth.rbac import OrgContext, require_org
 from zk2.core.arq import get_arq_dep
 from zk2.core.audit import write_audit
 from zk2.core.deps import get_db_dep
-from zk2.orgs.schemas import EmbeddingSettingsDto, EmbeddingSettingsUpdate, ReindexStartedDto
+from zk2.orgs.schemas import (
+    ChunkingSettingsUpdate,
+    EmbeddingSettingsDto,
+    EmbeddingSettingsUpdate,
+    ReindexStartedDto,
+)
 from zk2.orgs.service import (
     describe_embedding_settings,
     queue_reindex,
+    update_chunking_settings,
     update_embedding_settings,
 )
 
-router = APIRouter(prefix="/settings/embedding", tags=["settings"])
+router = APIRouter(prefix="/settings", tags=["settings"])
 
 
-@router.get("", response_model=EmbeddingSettingsDto)
+@router.get("/embedding", response_model=EmbeddingSettingsDto)
 async def get_embedding_settings(
     ctx: Annotated[OrgContext, Depends(require_org("viewer"))],
     db: Annotated[AsyncSession, Depends(get_db_dep)],
@@ -31,7 +37,7 @@ async def get_embedding_settings(
     return await describe_embedding_settings(db, org_id=ctx.org_id)
 
 
-@router.put("", response_model=EmbeddingSettingsDto)
+@router.put("/embedding", response_model=EmbeddingSettingsDto)
 async def put_embedding_settings(
     payload: EmbeddingSettingsUpdate,
     ctx: Annotated[OrgContext, Depends(require_org("admin"))],
@@ -60,7 +66,40 @@ async def put_embedding_settings(
     return result
 
 
-@router.post("/reindex", response_model=ReindexStartedDto)
+@router.put("/chunking", response_model=EmbeddingSettingsDto)
+async def put_chunking_settings(
+    payload: ChunkingSettingsUpdate,
+    ctx: Annotated[OrgContext, Depends(require_org("admin"))],
+    db: Annotated[AsyncSession, Depends(get_db_dep)],
+) -> EmbeddingSettingsDto:
+    """Change how documents are cut into chunks.
+
+    Nothing is re-cut here: the stored chunks stay until a reindex runs, and
+    the response says how many sources are now stale so the UI can offer it.
+    """
+    result = await update_chunking_settings(
+        db,
+        org_id=ctx.org_id,
+        chunk_size=payload.chunk_size,
+        chunk_overlap=payload.chunk_overlap,
+        chunk_strategy=payload.chunk_strategy,
+    )
+    await write_audit(
+        db,
+        action="org.chunking.changed",
+        actor_user_id=ctx.user.id,
+        org_id=ctx.org_id,
+        target=payload.chunk_strategy.value,
+        payload={
+            "chunk_size": payload.chunk_size,
+            "chunk_overlap": payload.chunk_overlap,
+            "stale": result.stale_sources,
+        },
+    )
+    return result
+
+
+@router.post("/embedding/reindex", response_model=ReindexStartedDto)
 async def reindex_org(
     ctx: Annotated[OrgContext, Depends(require_org("admin"))],
     db: Annotated[AsyncSession, Depends(get_db_dep)],
