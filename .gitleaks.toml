@@ -1,0 +1,31 @@
+# Gitleaks configuration.
+#
+# The default ruleset is the whole point of running the scan, so it stays on.
+# What follows only names the throwaway credentials that are supposed to look
+# like secrets - a test that proves a wrong password is rejected has to contain
+# a wrong password, and generic-api-key cannot tell that from a real one.
+#
+# Every exception pins a literal value inside a named path. A real key pasted
+# into the same file is still a finding, which is the property worth keeping:
+# an allowlist of `apps/api/tests/.*` would quietly cover the day somebody
+# hardcodes a live key in a fixture.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Passwords the API test suite types in on purpose"
+matchCondition = "AND"
+paths = ['''apps/api/tests/.*\.py''']
+regexes = [
+  '''Wrong-Pass123''',
+  '''Whatever1!''',
+]
+
+[[allowlists]]
+description = "Credentials for the e2e job's own database, created and dropped inside the run"
+matchCondition = "AND"
+paths = ['''\.github/workflows/ci\.yml''']
+regexes = [
+  '''e2e-secret-key-at-least-32-characters-long''',
+]
