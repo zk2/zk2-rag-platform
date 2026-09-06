@@ -23,10 +23,37 @@ export async function signIn(page: Page): Promise<void> {
   await expect(page.getByRole("navigation").getByRole("link", { name: "Sources" })).toBeVisible();
 }
 
+/** Where the app keeps the session; replayed rather than re-earned below. */
+const STORAGE_KEY = "zk2-auth";
+
+/**
+ * One login per worker process, cached here.
+ *
+ * The API allows ten logins a minute from one address
+ * (RATE_LIMIT_LOGIN_PER_MIN) and the whole suite now runs inside that window,
+ * so signing in for every test spent the budget and the last tests were
+ * refused. Nothing in these specs is about the login form except auth.spec,
+ * which still drives it for real.
+ */
+let session: string | null = null;
+
 /** A signed-in page, for the specs that are not about signing in. */
 export const test = base.extend<{ signedIn: Page }>({
-  signedIn: async ({ page }, use) => {
-    await signIn(page);
+  signedIn: async ({ page, browser, baseURL }, use) => {
+    if (session === null) {
+      const context = await browser.newContext({ baseURL });
+      const first = await context.newPage();
+      await signIn(first);
+      session = await first.evaluate(
+        (key) => window.localStorage.getItem(key) ?? "",
+        STORAGE_KEY,
+      );
+      await context.close();
+    }
+    await page.addInitScript(
+      ([key, value]) => window.localStorage.setItem(key, value),
+      [STORAGE_KEY, session],
+    );
     await use(page);
   },
 });

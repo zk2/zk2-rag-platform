@@ -13,7 +13,13 @@ async function upload(
   await page.getByRole("button", { name: "File", exact: true }).click();
   const chooser = page.waitForEvent("filechooser");
   await page.getByRole("button", { name: "Choose file" }).click();
+  // The upload itself is awaited: on a dev server the first POST to this route
+  // pays for compiling it, which is longer than an assertion is willing to wait.
+  const uploaded = page.waitForResponse(
+    (r) => r.url().includes("/sources/file") && r.request().method() === "POST",
+  );
   await (await chooser).setFiles(file);
+  await uploaded;
 }
 
 test.describe("workspace", () => {
