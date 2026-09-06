@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import structlog
 from fastapi import FastAPI, Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -76,13 +77,16 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def _validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
+        # Encoded, not passed through: an error raised by a model validator
+        # carries the exception object itself in `ctx`, and handing that to
+        # JSONResponse turns a 422 into a 500 with nothing useful in it.
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content={
                 "error": {
                     "code": "validation_failed",
                     "message": "Invalid request payload",
-                    "details": exc.errors(),
+                    "details": jsonable_encoder(exc.errors(), custom_encoder={Exception: str}),
                 }
             },
         )
