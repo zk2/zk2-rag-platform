@@ -203,7 +203,8 @@ flowchart LR
 ## Quick start
 
 Prerequisites: Docker with Compose v2, `make`, Node 22+, `pnpm` 9+, and `uv`
-(which brings its own Python 3.12).
+(which brings its own Python 3.12). Step-by-step for apt and dnf systems, with
+the traps each of them sets, is in [`docs/install.md`](docs/install.md).
 
 ```bash
 cp .env.example .env
