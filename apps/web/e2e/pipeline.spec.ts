@@ -27,6 +27,12 @@ test.describe("pipeline editor", () => {
     const candidates = page.locator("#cfg-k");
     await expect(candidates).toBeVisible();
     await expect(candidates).toHaveValue("20");
-    await expect(page.getByText("Candidates to fetch")).toBeVisible();
+    // The field's explanation comes from the schema too. Asserted as "there is
+    // one, and it says something" rather than by quoting it: pinning the prose
+    // here means every improvement to a description breaks a test that was
+    // never about the wording.
+    const description = candidates.locator("xpath=following-sibling::p[1]");
+    await expect(description).toBeVisible();
+    await expect(description).not.toBeEmpty();
   });
 });

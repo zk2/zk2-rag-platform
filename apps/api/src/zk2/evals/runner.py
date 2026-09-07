@@ -116,8 +116,7 @@ def _score_row(
         error=error,
         metrics=scores,
         retrieved=[
-            {"name": chunk["name"], "ordinal": chunk["ordinal"]}
-            for chunk in state.context_chunks
+            {"name": chunk["name"], "ordinal": chunk["ordinal"]} for chunk in state.context_chunks
         ],
         latency_ms=state.latency_ms,
         cost_usd=state.cost_usd,
