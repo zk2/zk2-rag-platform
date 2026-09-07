@@ -358,3 +358,28 @@ async def test_a_running_experiment_is_stopped_before_it_is_discarded(
     refused = await owner_client.delete(f"/experiments/{experiment['id']}")
     assert refused.status_code == 422
     assert "Stop the experiment" in refused.json()["error"]["message"]
+
+
+async def test_stats_count_the_people_in_each_arm(
+    owner_client: AsyncClient, db: AsyncSession, org_owner: dict[str, Any]
+) -> None:
+    """Turns say nothing about the split, because the split is over people.
+
+    One person asking a dozen questions fills one arm and leaves the other
+    empty, which reads as a broken fifty-fifty until the arms say how many
+    subjects each of them holds.
+    """
+    bot_id, version_id = await _bot_and_variant_version(owner_client)
+    experiment = await _create_experiment(owner_client, bot_id, version_id)
+    started = await owner_client.post(f"/experiments/{experiment['id']}/start")
+    assert started.status_code == 200, started.text
+
+    row = await db.scalar(select(AbExperiment).where(AbExperiment.id == experiment["id"]))
+    assert row is not None
+    for subject in ("user:1", "user:2", "user:3", "user:4", "user:5", "user:6"):
+        await assign(db, experiment=row, subject=subject)
+    await db.commit()
+
+    stats = (await owner_client.get(f"/experiments/{experiment['id']}/stats")).json()
+    assert sum(arm["subjects"] for arm in stats) == 6
+    assert all(arm["calls"] == 0 for arm in stats), "nobody has asked anything yet"

@@ -208,6 +208,23 @@ async def analytics(
     ).all()
     by_variant = {int(row.variant_id): row for row in rows if row.variant_id}
 
+    # How many people landed in each arm. Without it, one tester asking a
+    # dozen questions looks like a fifty-fifty split sending everything one
+    # way - the split is over subjects, and turns say nothing about it.
+    subject_rows = (
+        await db.execute(
+            text(
+                """
+                SELECT variant_id, count(*) AS subjects
+                FROM ab_assignments WHERE experiment_id = :experiment
+                GROUP BY variant_id
+                """
+            ),
+            {"experiment": experiment.id},
+        )
+    ).all()
+    subjects = {int(row.variant_id): int(row.subjects) for row in subject_rows}
+
     result: list[dict[str, object]] = []
     for variant_id, variant in variants.items():
         row = by_variant.get(variant_id)
@@ -217,6 +234,7 @@ async def analytics(
                 "name": variant.name,
                 "is_control": variant.is_control,
                 "traffic_percent": variant.traffic_percent,
+                "subjects": subjects.get(variant_id, 0),
                 "calls": int(row.calls) if row else 0,
                 "tokens_in": int(row.tokens_in) if row else 0,
                 "tokens_out": int(row.tokens_out) if row else 0,

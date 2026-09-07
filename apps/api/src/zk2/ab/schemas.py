@@ -49,6 +49,8 @@ class VariantStatsDto(BaseModel):
     name: str
     is_control: bool
     traffic_percent: int
+    #: People assigned to this arm. The split is over these, not over turns.
+    subjects: int = 0
     calls: int
     tokens_in: int
     tokens_out: int

@@ -48,6 +48,7 @@ type VariantStats = {
   name: string;
   is_control: boolean;
   traffic_percent: number;
+  subjects: number;
   calls: number;
   tokens_in: number;
   tokens_out: number;
@@ -68,6 +69,20 @@ export default function AbPage({ params }: { params: Promise<{ id: string }> }) 
     queryFn: () => api.get<Pipeline[]>("/pipelines"),
   });
   const [pipelineId, setPipelineId] = useState<number | null>(null);
+  // Every pipeline of the organization, so an arm can be named whichever
+  // pipeline it points at - not only the one selected in the form above
+  const allVersions = useQuery({
+    queryKey: ["all-pipeline-versions", (pipelines.data ?? []).map((p) => p.id)],
+    enabled: (pipelines.data ?? []).length > 0,
+    queryFn: async () => {
+      const lists = await Promise.all(
+        (pipelines.data ?? []).map((p) =>
+          api.get<PipelineVersion[]>(`/pipelines/${p.id}/versions`),
+        ),
+      );
+      return lists.flat();
+    },
+  });
   const versions = useQuery({
     queryKey: ["pipeline-versions", pipelineId],
     queryFn: () => api.get<PipelineVersion[]>(`/pipelines/${pipelineId}/versions`),
@@ -120,7 +135,9 @@ export default function AbPage({ params }: { params: Promise<{ id: string }> }) 
         <h1 className="text-2xl font-bold text-slate-900 mt-1">A/B experiments</h1>
         <p className="text-slate-500 text-sm mt-1">
           Split live traffic between the bot&apos;s current pipeline and a candidate version. One
-          experiment runs at a time; a visitor keeps the variant they were given.
+          experiment runs at a time. A signed-in visitor is assigned once and keeps that arm for
+          the whole experiment - so the split is over people, and testing it alone fills one arm
+          however many questions you ask.
         </p>
       </div>
 
@@ -209,7 +226,7 @@ export default function AbPage({ params }: { params: Promise<{ id: string }> }) 
         <ExperimentCard
           key={experiment.id}
           experiment={experiment}
-          versions={versions.data}
+          versions={allVersions.data}
           onAction={(action) => act.mutate({ id: experiment.id, action })}
           onPromote={(variantId) => promote.mutate({ id: experiment.id, variantId })}
           onDelete={() => remove.mutate(experiment.id)}
@@ -299,6 +316,16 @@ function ExperimentCard({
             <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
               <th className="pb-2 font-medium">Variant</th>
               <th className="pb-2 font-medium text-right">Split</th>
+              <th className="pb-2 font-medium text-right">
+                <span className="inline-flex items-center gap-1">
+                  People
+                  <HelpTip side="left">
+                    The split is over people, not questions. A signed-in visitor is assigned once
+                    and keeps that arm for the whole experiment, so one person testing alone will
+                    fill a single arm however many questions they ask.
+                  </HelpTip>
+                </span>
+              </th>
               <th className="pb-2 font-medium text-right">Turns</th>
               <th className="pb-2 font-medium text-right">Tokens</th>
               <th className="pb-2 font-medium text-right">Spend</th>
@@ -319,6 +346,7 @@ function ExperimentCard({
                   </div>
                 </td>
                 <td className="py-2 text-right tabular-nums">{row.traffic_percent}%</td>
+                <td className="py-2 text-right tabular-nums">{row.subjects}</td>
                 <td className="py-2 text-right tabular-nums">
                   <div className="flex items-center justify-end gap-2">
                     <span
