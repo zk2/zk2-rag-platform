@@ -115,3 +115,36 @@ def test_palette_exposes_a_json_schema_per_node() -> None:
     for entry in types:
         assert entry.config_schema["type"] == "object"
         assert entry.title and entry.description
+
+
+def test_a_node_with_nothing_feeding_it_is_rejected() -> None:
+    """The trap the editor sets: removing a node takes its edges with it.
+
+    Delete the reranker between fusion and the context builder and the graph
+    still saves; the context builder then produces nothing, the answer comes
+    from the model alone, and the run reports metrics as if it had worked.
+    """
+    spec = dag(
+        [("d", "retriever_dense"), ("f", "fusion"), ("c", "context_builder"), ("g", "generate")],
+        [("d", "f"), ("c", "g")],
+    )
+    with pytest.raises(ValidationError, match="Nothing feeds c"):
+        validate_dag(spec)
+
+
+def test_a_node_nobody_reads_is_rejected() -> None:
+    spec = dag(
+        [("d", "retriever_dense"), ("f", "fusion"), ("g", "generate")],
+        [("d", "f")],
+    )
+    with pytest.raises(ValidationError, match="Nothing reads f"):
+        validate_dag(spec)
+
+
+def test_a_generate_only_pipeline_is_allowed() -> None:
+    """No retrieval at all is a real configuration - the baseline to beat."""
+    assert validate_dag(dag([("g", "generate")], [])) == ["g"]
+
+
+def test_the_default_pipeline_is_connected() -> None:
+    assert validate_dag(DEFAULT_DAG)[-1] == "answer"

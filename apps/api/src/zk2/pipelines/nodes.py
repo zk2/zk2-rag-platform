@@ -49,6 +49,11 @@ class Node(ABC):
     title: ClassVar[str]
     description: ClassVar[str]
     config_model: ClassVar[builtins.type[BaseModel]]
+    #: This node works on what earlier nodes retrieved, so an empty inbox means
+    #: it has nothing to do - and says nothing about it, which is the problem.
+    reads_upstream: ClassVar[bool] = False
+    #: The node that produces the answer. Nothing is expected to read from it.
+    terminal: ClassVar[bool] = False
 
     @abstractmethod
     def run(
@@ -135,6 +140,7 @@ class Fusion(Node):
     title = "Fusion (RRF)"
     description = "Merges retriever outputs on rank, not on incomparable scores."
     config_model = FusionConfig
+    reads_upstream = True
 
     async def run(
         self, state: PipelineState, ctx: NodeContext, config: FusionConfig
@@ -155,6 +161,7 @@ class Rerank(Node):
     title = "Rerank"
     description = "Cross-encoder scoring of query and passage together."
     config_model = RerankConfig
+    reads_upstream = True
 
     async def run(
         self, state: PipelineState, ctx: NodeContext, config: RerankConfig
@@ -185,6 +192,7 @@ class ContextBuilder(Node):
     title = "Context builder"
     description = "Numbers the passages and packs them into the token budget."
     config_model = ContextConfig
+    reads_upstream = True
 
     async def run(
         self, state: PipelineState, ctx: NodeContext, config: ContextConfig
@@ -255,6 +263,7 @@ class Generate(Node):
     title = "Generate"
     description = "Streams the answer from the configured provider."
     config_model = GenerateConfig
+    terminal = True
 
     async def run(
         self, state: PipelineState, ctx: NodeContext, config: GenerateConfig

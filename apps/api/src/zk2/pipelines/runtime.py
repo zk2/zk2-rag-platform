@@ -20,7 +20,7 @@ import structlog
 
 from zk2.chat.events import StreamEvent
 from zk2.core.errors import AppError, ValidationError
-from zk2.pipelines.dag import DagSpec, topological_order
+from zk2.pipelines.dag import DagSpec, NodeSpec, topological_order
 from zk2.pipelines.nodes import REGISTRY
 from zk2.pipelines.state import NodeContext, PipelineState
 
@@ -62,9 +62,41 @@ def validate_dag(dag: DagSpec) -> list[str]:
 
     if not any(spec.type == "generate" for spec in order):
         raise ValidationError("Pipeline must end with a generate node")
+    # Before the position check: a graph with a loose end usually fails that
+    # one too, and "the generate node must be last" is a puzzling way to be
+    # told that an edge is missing.
+    _check_connected(dag, order)
     if order[-1].type != "generate":
         raise ValidationError("The generate node must be last: nothing may run after the answer")
     return [spec.id for spec in order]
+
+
+def _check_connected(dag: DagSpec, order: list[NodeSpec]) -> None:
+    """Refuse a graph whose pieces are not joined up.
+
+    Removing a node in the editor takes its edges with it, and the result saves
+    without complaint: a context builder with nothing feeding it produces an
+    empty context, the generate node answers from the model alone, and the run
+    completes with metrics that look like an answer. A quiet wrong result is
+    worse than a loud refusal, so both loose ends are named here.
+    """
+    has_incoming = {target for _, target in dag.edges}
+    has_outgoing = {source for source, _ in dag.edges}
+
+    for spec in order:
+        if REGISTRY[spec.type].terminal and spec.id in has_outgoing:
+            raise ValidationError(
+                "The generate node must be last: nothing may run after the answer"
+            )
+
+    for spec in order:
+        node = REGISTRY[spec.type]
+        if node.reads_upstream and spec.id not in has_incoming:
+            raise ValidationError(
+                f"Nothing feeds {spec.id}: a {node.title.lower()} node has no results to work on"
+            )
+        if not node.terminal and spec.id not in has_outgoing:
+            raise ValidationError(f"Nothing reads {spec.id}: its output goes nowhere")
 
 
 async def execute(

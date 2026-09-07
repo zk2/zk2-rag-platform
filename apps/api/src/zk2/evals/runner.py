@@ -142,7 +142,12 @@ async def execute_run(db: AsyncSession, *, run_id: int, settings: RunSettings) -
     run.status = "running"
     run.items_total = len(items)
     run.items_done = 0
-    await db.flush()
+    # Committed, not just flushed: the only reader of this progress is the API
+    # answering a poll on another connection, and it cannot see an open
+    # transaction. Without this a run of any length showed "pending" from start
+    # to finish and then appeared complete, which is indistinguishable from a
+    # worker that never picked it up.
+    await db.commit()
 
     started = time.perf_counter()
     all_scores: list[dict[str, float]] = []
@@ -187,7 +192,7 @@ async def execute_run(db: AsyncSession, *, run_id: int, settings: RunSettings) -
             )
         )
         run.items_done += 1
-        await db.flush()
+        await db.commit()
 
     run.summary = _summarise(all_scores)
     run.cost_usd = total_cost

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
-import { FlaskConical, Play, Trash2, Upload } from "lucide-react";
+import { FlaskConical, Loader2, Play, Trash2, Upload } from "lucide-react";
 
 type Dataset = { id: number; name: string; description: string | null; item_count: number };
 type Metric = { name: string; needs_judge: boolean; doc: string };
@@ -224,6 +224,45 @@ function PipelineVersionSelect({
   );
 }
 
+/** A run that has been queued or is executing, as opposed to finished. */
+function isWorking(run: Run): boolean {
+  return run.status === "pending" || run.status === "running";
+}
+
+/**
+ * A run takes tens of seconds and the row was static text while it did.
+ * Nothing said whether the work had started, stalled or finished, so the only
+ * way to find out was to reload the page and hope.
+ *
+ * Queued and running look different on purpose: a bar that slides has no
+ * numbers behind it and must not pretend otherwise, while a run in progress
+ * fills its bar by items actually scored.
+ */
+function RunProgress({ run }: { run: Run }) {
+  const done = run.items_done;
+  const total = run.items_total;
+  const known = run.status === "running" && total > 0;
+  const percent = known ? Math.max(4, Math.round((done / total) * 100)) : 0;
+
+  return (
+    <div className="mt-1.5 w-56 max-w-full">
+      <div className="h-1 overflow-hidden rounded-full bg-slate-200">
+        {known ? (
+          <div
+            className="h-full rounded-full bg-slate-700 transition-[width] duration-500 ease-out"
+            style={{ width: `${percent}%` }}
+          />
+        ) : (
+          <div className="h-full w-1/3 animate-[indeterminate-slide_1.4s_ease-in-out_infinite] rounded-full bg-slate-400" />
+        )}
+      </div>
+      <div className="mt-1 text-[10px] text-slate-500">
+        {known ? `${done} of ${total} questions` : "waiting for a worker"}
+      </div>
+    </div>
+  );
+}
+
 function Runs({ datasetId }: { datasetId: number }) {
   const qc = useQueryClient();
   const runs = useQuery({
@@ -359,10 +398,13 @@ function Runs({ datasetId }: { datasetId: number }) {
               <li key={run.id} className="py-3">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-sm text-slate-900">
-                      {run.label || `Run ${run.id}`}
+                    <div className="flex items-center gap-2 text-sm text-slate-900">
+                      {isWorking(run) && (
+                        <Loader2 className="size-3.5 shrink-0 animate-spin text-slate-500" />
+                      )}
+                      <span>{run.label || `Run ${run.id}`}</span>
                       {run.is_baseline && (
-                        <span className="ml-2 text-[10px] uppercase text-emerald-700">baseline</span>
+                        <span className="text-[10px] uppercase text-emerald-700">baseline</span>
                       )}
                     </div>
                     <div className="text-xs text-slate-500">
@@ -375,6 +417,7 @@ function Runs({ datasetId }: { datasetId: number }) {
                       {run.pipeline_version_id !== null &&
                         ` · pipeline v${run.pipeline_version_id}`}
                     </div>
+                    {isWorking(run) && <RunProgress run={run} />}
                     {run.error && <div className="text-xs text-red-600">{run.error}</div>}
                   </div>
                   <div className="flex gap-1">

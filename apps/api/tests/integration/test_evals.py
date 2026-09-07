@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.integration.test_ingest_and_retrieval import FakeEmbeddings
 from tests.integration.test_rag_stream import FakeLLM
+from zk2.core.db import db_session
 from zk2.evals.models import EvalRun
 from zk2.evals.runner import RunSettings, compare, execute_run, regressions
 from zk2.evals.schemas import RunStart
@@ -300,3 +301,51 @@ async def test_a_run_can_be_pinned_to_a_pipeline_version(
     run = await db.get(EvalRun, started.json()["id"])
     assert run is not None
     assert run.pipeline_version_id == version["id"]
+
+
+async def test_progress_is_visible_while_the_run_is_still_going(
+    owner_client: AsyncClient,
+    db: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    fakes: FakeLLM,
+) -> None:
+    """Nothing else can see an open transaction.
+
+    Progress used to be flushed and not committed, so the API answering the
+    poll saw "pending" and zero items from start to finish and then a finished
+    run - which looks exactly like a worker that never picked the job up.
+
+    The observation is taken from its own session, because that is the only
+    kind that proves the point.
+    """
+    from zk2.evals import runner as runner_module
+
+    dataset_id = await _dataset_with_items(owner_client)
+    bot_id = await _bot_with_source(owner_client, db)
+    started = await owner_client.post(
+        f"/evals/datasets/{dataset_id}/runs",
+        json={"bot_id": bot_id, "metrics": ["citation_rate"]},
+    )
+    run_id = int(started.json()["id"])
+    await db.commit()
+
+    seen: list[tuple[str, int]] = []
+    real_execute = runner_module.execute
+
+    def spy(*args: Any, **kwargs: Any) -> Any:
+        async def _wrapped() -> Any:
+            async with db_session() as watcher:
+                row = await watcher.get(EvalRun, run_id)
+                assert row is not None
+                seen.append((row.status, row.items_done))
+            async for event in real_execute(*args, **kwargs):
+                yield event
+
+        return _wrapped()
+
+    monkeypatch.setattr(runner_module, "execute", spy)
+    await execute_run(db, run_id=run_id, settings=RunSettings(metrics=["citation_rate"]))
+
+    assert seen, "the run never reached an item"
+    assert seen[0] == ("running", 0), seen
+    assert seen[-1][1] >= 1, "later items saw no progress from earlier ones"

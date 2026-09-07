@@ -25,3 +25,14 @@
     font-family: var(--font-sans);
   }
 }
+
+/* A bar that slides for work whose progress is not yet countable - a run that
+   is queued and has not told anyone how many questions it will score. */
+@keyframes indeterminate-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
