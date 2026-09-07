@@ -18,6 +18,7 @@ import "@xyflow/react/dist/style.css";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { HelpTip, LabelWithHelp } from "@/components/ui/help-tip";
 import { Label } from "@/components/ui/label";
 import { api } from "@/lib/api";
 import {
@@ -55,6 +56,8 @@ export default function PipelineEditorPage({ params }: { params: Promise<{ id: s
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  // A sample, not a setting: it reads as a label until you notice the field is
+  // editable, so the field is now labelled and this is only the starting text.
   const [question, setQuestion] = useState("What do the sources say?");
   const [botId, setBotId] = useState<number | null>(null);
   const [showVersions, setShowVersions] = useState(false);
@@ -331,8 +334,21 @@ export default function PipelineEditorPage({ params }: { params: Promise<{ id: s
           )}
 
           <div className="border-t border-slate-200 pt-4 space-y-2">
-            <div className="text-xs uppercase tracking-wide text-slate-500">Test run</div>
+            <div className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-slate-500">
+              Test run
+              <HelpTip>
+                Ask one question through the graph as it stands on the canvas, unsaved edits
+                included, and see the answer with how long each node took. Nothing is written: no
+                conversation is created and no version is saved. It does spend one model call.
+              </HelpTip>
+            </div>
+            <LabelWithHelp
+              htmlFor="test-bot"
+              label="As this bot"
+              help="The graph is only half of an answer. The bot supplies the rest: which sources may be searched, which model writes, and the system prompt. Pick the bot this pipeline is meant for, or the answer will be about the wrong documents."
+            />
             <select
+              id="test-bot"
               value={botId ?? ""}
               onChange={(e) => setBotId(Number(e.target.value))}
               className="w-full h-9 rounded border border-slate-300 px-2 text-sm bg-white"
@@ -344,14 +360,29 @@ export default function PipelineEditorPage({ params }: { params: Promise<{ id: s
               ))}
               {!bots.data?.length && <option value="">No bots yet</option>}
             </select>
-            <Input value={question} onChange={(e) => setQuestion(e.target.value)} />
+            <LabelWithHelp
+              htmlFor="test-question"
+              label="Question"
+              help="What to ask. A question you already know the answer to is worth more than a general one: it is the difference between seeing that the graph runs and seeing whether it works. Measuring properly is what the golden set on the Evals page is for."
+            />
+            <Input
+              id="test-question"
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+            />
             <Button
               className="w-full"
               onClick={() => testRun.mutate()}
               disabled={!botId || testRun.isPending}
             >
               <Play className="size-4 mr-1" />
-              {testRun.isPending ? "Running…" : "Run this draft"}
+              {/* "draft" only means something while there are unsaved edits;
+                  the rest of the time it invited a question nobody could answer */}
+              {testRun.isPending
+                ? "Running…"
+                : dirty
+                  ? "Run the unsaved draft"
+                  : "Run the saved graph"}
             </Button>
             {testRun.error && (
               <p className="text-xs text-red-600">{(testRun.error as Error).message}</p>
