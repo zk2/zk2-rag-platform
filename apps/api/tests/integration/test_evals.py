@@ -349,3 +349,46 @@ async def test_progress_is_visible_while_the_run_is_still_going(
     assert seen, "the run never reached an item"
     assert seen[0] == ("running", 0), seen
     assert seen[-1][1] >= 1, "later items saw no progress from earlier ones"
+
+
+async def test_the_trace_of_an_item_is_closed(
+    owner_client: AsyncClient,
+    db: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    fakes: FakeLLM,
+) -> None:
+    """An observation reaches Langfuse when it is closed, and not before.
+
+    The root span of an eval item was created inline in the node context and
+    never ended, so it was never exported. Its children were - naming a parent
+    that does not exist - which left a whole run invisible in every view that
+    lists traces, while the events were in the database all along.
+    """
+    from zk2.core.tracing import TurnTrace
+    from zk2.evals import runner as runner_module
+
+    ended: list[dict[str, Any]] = []
+
+    class SpyTurn(TurnTrace):
+        def end(self, **fields: Any) -> None:
+            ended.append(fields)
+
+    def _start_turn(name: str, *, metadata: dict[str, Any] | None = None) -> TurnTrace:
+        del name, metadata
+        return SpyTurn()
+
+    monkeypatch.setattr(runner_module, "start_turn", _start_turn)
+
+    dataset_id = await _dataset_with_items(owner_client)
+    bot_id = await _bot_with_source(owner_client, db)
+    started = await owner_client.post(
+        f"/evals/datasets/{dataset_id}/runs",
+        json={"bot_id": bot_id, "metrics": ["citation_rate"]},
+    )
+    await db.commit()
+    await execute_run(
+        db, run_id=int(started.json()["id"]), settings=RunSettings(metrics=["citation_rate"])
+    )
+
+    assert len(ended) == 2, "every item's trace is closed, or it is never sent"
+    assert "metrics" in ended[0]["output"]

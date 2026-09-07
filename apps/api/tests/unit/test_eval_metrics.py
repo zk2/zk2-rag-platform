@@ -12,6 +12,7 @@ from zk2.evals.metrics import (
     AnswerPresence,
     AnswerRelevancy,
     CitationRate,
+    ContextPrecision,
     Correctness,
     EvalSample,
     Faithfulness,
@@ -134,3 +135,31 @@ async def test_correctness_needs_a_reference_answer() -> None:
 async def test_judge_metrics_score_zero_without_a_judge() -> None:
     for metric in (Faithfulness(), AnswerRelevancy(), Correctness()):
         assert await metric.score(sample(), None, "m") == 0.0
+
+
+async def test_context_precision_counts_the_noise_in_the_prompt() -> None:
+    """What recall cannot see.
+
+    Recall saturates the moment the right document reaches the prompt, so a
+    context of one good passage and four irrelevant ones scores the same 1.0
+    as five good ones. This is the metric that separates them - and the one
+    that can tell whether a reranker earns its latency.
+    """
+    clean = sample(retrieved_sources=["handbook.md"] * 5)
+    assert await ContextPrecision().score(clean, None, "m") == 1.0
+
+    noisy = sample(retrieved_sources=["handbook.md", "other.pdf", "other.pdf", "third.pdf"])
+    assert await ContextPrecision().score(noisy, None, "m") == 0.25
+
+    # Both score 1.0 on recall, which is exactly the blind spot
+    assert await RetrievalRecall().score(noisy, None, "m") == 1.0
+
+
+async def test_context_precision_forgives_a_question_with_no_answer() -> None:
+    """Nothing in the corpus answers it, so no passage can be the wrong one."""
+    negative = sample(expected_sources=[], retrieved_sources=["anything.pdf"])
+    assert await ContextPrecision().score(negative, None, "m") == 1.0
+
+
+async def test_context_precision_of_an_empty_context_is_zero() -> None:
+    assert await ContextPrecision().score(sample(retrieved_sources=[]), None, "m") == 0.0

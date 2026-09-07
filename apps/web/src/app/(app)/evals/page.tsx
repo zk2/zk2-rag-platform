@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { HelpTip, LabelWithHelp } from "@/components/ui/help-tip";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import { FlaskConical, Loader2, Play, Trash2, Upload } from "lucide-react";
@@ -100,7 +101,11 @@ function Datasets({
       <CardContent className="space-y-4">
         <div className="flex gap-3 items-end">
           <div className="flex-1">
-            <Label htmlFor="ds-name">New dataset</Label>
+            <LabelWithHelp
+              htmlFor="ds-name"
+              label="New dataset"
+              help="A golden set: questions whose answers you already know, with the document each should come from. It is what turns a change to the pipeline from an opinion into a measurement."
+            />
             <Input
               id="ds-name"
               value={name}
@@ -333,7 +338,11 @@ function Runs({ datasetId }: { datasetId: number }) {
               </select>
             </div>
             <div>
-              <Label htmlFor="run-version">Pipeline version</Label>
+              <LabelWithHelp
+                htmlFor="run-version"
+                label="Pipeline version"
+                help="Which graph this run executes. Left on the bot's own pipeline it measures what people are actually talking to; pinned to a version it measures that graph instead - which is how two versions are compared on the same questions without changing what the bot serves."
+              />
               <PipelineVersionSelect
                 pipelines={pipelines.data ?? []}
                 value={versionId}
@@ -341,7 +350,14 @@ function Runs({ datasetId }: { datasetId: number }) {
               />
             </div>
             <div className="md:col-span-2">
-              <Label>Metrics</Label>
+              <Label>
+                Metrics
+                <HelpTip>
+                  Deterministic metrics are computed from what the run already produced and cost
+                  nothing. The ones marked $ ask a model to judge each answer: one extra call per
+                  question, per metric.
+                </HelpTip>
+              </Label>
               <div className="flex flex-wrap gap-2 mt-1">
                 {metrics.data?.map((metric) => {
                   const active = chosen.includes(metric.name);

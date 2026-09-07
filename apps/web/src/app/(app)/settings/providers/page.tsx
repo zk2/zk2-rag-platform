@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LabelWithHelp } from "@/components/ui/help-tip";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import { useCatalog } from "@/lib/catalog";
@@ -169,7 +170,11 @@ function EmbeddingCard() {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
           <div className="md:col-span-2">
-            <Label htmlFor="embedding-model">Model</Label>
+            <LabelWithHelp
+              htmlFor="embedding-model"
+              label="Model"
+              help="Turns a passage into the vector that semantic search compares against. Retrieval only ever sees vectors built with the model chosen here, so changing it hides the whole corpus from search until a reindex rebuilds them."
+            />
             <select
               id="embedding-model"
               value={chosen}
@@ -306,7 +311,11 @@ function ChunkingCard() {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div>
-            <Label htmlFor="chunk-strategy">Strategy</Label>
+            <LabelWithHelp
+              htmlFor="chunk-strategy"
+              label="Strategy"
+              help="How a document's own structure - pages, headings, sheets - is turned into chunks. Semantic packs neighbouring sections up to the budget and is almost always what you want; one-per-section pins a citation to an exact page at the cost of small chunks; fixed ignores structure entirely."
+            />
             <select
               id="chunk-strategy"
               value={chosenStrategy}
@@ -321,7 +330,11 @@ function ChunkingCard() {
             </select>
           </div>
           <div>
-            <Label htmlFor="chunk-size">Target size (tokens)</Label>
+            <LabelWithHelp
+              htmlFor="chunk-size"
+              label="Target size (tokens)"
+              help="How much text one chunk aims to hold. This is the unit retrieval returns and the answer cites, and it sets the bill: five passages of 400 tokens is a prompt of 2000. Smaller chunks are more precise and lose context; larger ones carry context and dilute what matched."
+            />
             <Input
               id="chunk-size"
               type="number"
@@ -332,7 +345,11 @@ function ChunkingCard() {
             />
           </div>
           <div>
-            <Label htmlFor="chunk-overlap">Overlap (tokens)</Label>
+            <LabelWithHelp
+              htmlFor="chunk-overlap"
+              label="Overlap (tokens)"
+              help="Text repeated between two chunks when a passage had to be cut mid-prose, so a sentence split across the boundary is still whole in one of them. Packing boundaries fall between whole sections and need none."
+            />
             <Input
               id="chunk-overlap"
               type="number"

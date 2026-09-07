@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LabelWithHelp } from "@/components/ui/help-tip";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SourcePicker, type SourceNode } from "@/components/source-picker";
@@ -111,7 +112,11 @@ export default function BotSettingsPage({ params }: { params: Promise<{ id: stri
             />
           </div>
           <div>
-            <Label htmlFor="bot-prompt">System prompt</Label>
+            <LabelWithHelp
+              htmlFor="bot-prompt"
+              label="System prompt"
+              help="Who the bot is and how it should answer - role, tone, what to do when the sources disagree. Do not repeat the grounding and citation instructions here: they are appended automatically, and saying them twice measures the duplication rather than the prompt."
+            />
             <Textarea
               id="bot-prompt"
               rows={6}
@@ -129,7 +134,11 @@ export default function BotSettingsPage({ params }: { params: Promise<{ id: stri
         <CardHeader><CardTitle>Model</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <Label htmlFor="bot-model">Model</Label>
+            <LabelWithHelp
+              htmlFor="bot-model"
+              label="Model"
+              help="The model that writes the answer from the retrieved passages. It is the largest part of both the wait and the bill; retrieval settings decide what it gets to read."
+            />
             <select
               id="bot-model"
               value={form.llm_model}
@@ -157,7 +166,11 @@ export default function BotSettingsPage({ params }: { params: Promise<{ id: stri
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label htmlFor="bot-temp">Temperature</Label>
+              <LabelWithHelp
+                htmlFor="bot-temp"
+                label="Temperature"
+                help="How much the model is allowed to vary its wording. Zero for answers grounded in documents, where the same question should give the same answer; higher only when variety is the point. Some models reject it entirely."
+              />
               <Input
                 id="bot-temp"
                 type="number"
@@ -175,7 +188,11 @@ export default function BotSettingsPage({ params }: { params: Promise<{ id: stri
               )}
             </div>
             <div>
-              <Label htmlFor="bot-k">Passages retrieved (k)</Label>
+              <LabelWithHelp
+                htmlFor="bot-k"
+                label="Passages retrieved (k)"
+                help="How many passages reach the prompt. Too few and the answer is missing; too many and the right one is buried among near-misses, while every extra passage is paid for on every question. Five is a sensible start."
+              />
               <Input
                 id="bot-k"
                 type="number"

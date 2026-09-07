@@ -69,6 +69,36 @@ class RetrievalRecall:
         return hits / len(sample.expected_sources)
 
 
+class ContextPrecision:
+    """Share of the passages in the prompt that came from an expected source.
+
+    Recall answers "did the right document reach the prompt at all", and it
+    saturates at 1.0 the moment retrieval works - which hides everything a
+    reranker does. Measured on this corpus, both configurations scored 1.0 on
+    recall while the context differed on eleven questions of twelve: with the
+    cross-encoder all five passages came from the right document, without it
+    two of the five were noise from elsewhere. Precision is the metric that
+    can see that, and it is deterministic - the expected sources are already
+    in the dataset.
+
+    An item with no expected sources scores 1.0: a question the corpus cannot
+    answer has no wrong passage to retrieve.
+    """
+
+    name = "context_precision"
+    needs_judge = False
+
+    async def score(self, sample: EvalSample, judge: LLMProvider | None, model: str) -> float:
+        del judge, model
+        if not sample.expected_sources:
+            return 1.0
+        if not sample.retrieved_sources:
+            return 0.0
+        expected = {name.lower() for name in sample.expected_sources}
+        hits = sum(1 for name in sample.retrieved_sources if name.lower() in expected)
+        return hits / len(sample.retrieved_sources)
+
+
 class CitationRate:
     """Did the answer point at the passages it was given?"""
 
@@ -190,6 +220,7 @@ class Correctness:
 
 ALL_METRICS: tuple[Metric, ...] = (
     RetrievalRecall(),
+    ContextPrecision(),
     CitationRate(),
     AnswerPresence(),
     Faithfulness(),

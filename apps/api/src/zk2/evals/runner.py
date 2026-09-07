@@ -101,6 +101,45 @@ def _summarise(scores: list[dict[str, float]]) -> dict[str, float]:
     }
 
 
+def _score_row(
+    run: EvalRun,
+    item: EvalItem,
+    state: PipelineState,
+    scores: dict[str, float],
+    error: str | None,
+) -> EvalScore:
+    """What one item produced, kept for the per-item view and comparisons."""
+    return EvalScore(
+        run_id=run.id,
+        item_id=item.id,
+        answer=state.answer or None,
+        error=error,
+        metrics=scores,
+        retrieved=[
+            {"name": chunk["name"], "ordinal": chunk["ordinal"]}
+            for chunk in state.context_chunks
+        ],
+        latency_ms=state.latency_ms,
+        cost_usd=state.cost_usd,
+    )
+
+
+def _finish(
+    run: EvalRun,
+    all_scores: list[dict[str, float]],
+    *,
+    total_cost: Decimal,
+    started: float,
+    items: int,
+) -> None:
+    run.summary = _summarise(all_scores)
+    run.cost_usd = total_cost
+    run.duration_ms = int((time.perf_counter() - started) * 1000)
+    run.status = "done" if all_scores or not items else "failed"
+    if not all_scores and items:
+        run.error = "Every item failed"
+
+
 async def execute_run(db: AsyncSession, *, run_id: int, settings: RunSettings) -> EvalRun:
     """Run every item in the dataset and record the scores."""
     run = await db.scalar(select(EvalRun).where(EvalRun.id == run_id))
@@ -155,12 +194,17 @@ async def execute_run(db: AsyncSession, *, run_id: int, settings: RunSettings) -
 
     for item in items:
         state = PipelineState(query=item.question, source_ids=source_ids)
+        # Held rather than created inline: an observation reaches Langfuse when
+        # it is closed, so a root nobody closes is never sent - and its
+        # children arrive naming a parent that does not exist, which puts a
+        # whole eval run outside every view that lists traces.
+        turn = start_turn("eval.item", metadata={"run_id": run.id, "item_id": item.id})
         ctx = NodeContext(
             db=db,
             org_id=run.org_id,
             bot=bot,
             version=version,
-            trace=start_turn("eval.item", metadata={"run_id": run.id, "item_id": item.id}),
+            trace=turn,
         )
         error: str | None = None
         try:
@@ -171,35 +215,21 @@ async def execute_run(db: AsyncSession, *, run_id: int, settings: RunSettings) -
             logger.exception("evals.item_failed", run_id=run.id, item_id=item.id)
 
         scores = {} if error else await _score_item(state, item, settings, judge)
+        turn.end(
+            output={"question": item.question, "metrics": scores},
+            level="ERROR" if error else "DEFAULT",
+            status_message=error[:500] if error else None,
+        )
         if not error:
             all_scores.append(scores)
         if state.cost_usd is not None:
             total_cost += state.cost_usd
 
-        db.add(
-            EvalScore(
-                run_id=run.id,
-                item_id=item.id,
-                answer=state.answer or None,
-                error=error,
-                metrics=scores,
-                retrieved=[
-                    {"name": chunk["name"], "ordinal": chunk["ordinal"]}
-                    for chunk in state.context_chunks
-                ],
-                latency_ms=state.latency_ms,
-                cost_usd=state.cost_usd,
-            )
-        )
+        db.add(_score_row(run, item, state, scores, error))
         run.items_done += 1
         await db.commit()
 
-    run.summary = _summarise(all_scores)
-    run.cost_usd = total_cost
-    run.duration_ms = int((time.perf_counter() - started) * 1000)
-    run.status = "done" if all_scores or not items else "failed"
-    if not all_scores and items:
-        run.error = "Every item failed"
+    _finish(run, all_scores, total_cost=total_cost, started=started, items=len(items))
     await db.flush()
     logger.info(
         "evals.run_finished",
