@@ -103,8 +103,21 @@ whole reason for building it.
 
 A side observation from the same run: four questions scored 0.2 on context
 precision in both configurations - one passage of five from the expected
-document - and were answered correctly all the same. Five passages is more
-than this corpus needs.
+document - and were answered correctly all the same. That looked like four
+wasted passages per question, and it was not.
+
+Cutting to three passages, without the reranker, lost a question outright:
+retrieval_recall 1.00 to 0.92, correctness 0.98 to 0.91, answer_relevancy 0.92
+to 0.83, all of it from the tool-comparison question whose one useful passage
+sat in fifth place. The apparent waste was margin. Context precision *rose*,
+0.63 to 0.69, because the hardest question fell out of the average along with
+its low score - a reminder of what optimising a single metric buys.
+
+Which sharpens what the reranker might be for. On that same question the
+reranker puts the useful passage first, where without it the passage is fifth.
+So its value may not be a better answer at five passages - measured, it is not -
+but permitting three, which is forty per cent off the input tokens of every
+question. That comparison is the next one to run.
 
 ## Alternatives considered
 
