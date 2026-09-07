@@ -70,6 +70,42 @@ GPU, which is where they belong.
 - Reranking runs in the worker too, inside eval runs, so a hundred-question run
   pays it a hundred times. Worth remembering before running one on a laptop
 
+## Measured, 2026-09-07
+
+Run against a twelve-question golden set on the corpus described in ADR-0015,
+with the graph pinned so the two differed only by the reranker and both put
+five passages in the prompt:
+
+| | with the reranker | without |
+|---|---|---|
+| retrieval_recall | 1.00 | 1.00 |
+| context_precision | **0.73** | 0.63 |
+| correctness, faithfulness, answer_relevancy, citation_rate | identical | identical |
+| twelve questions | 37.7 s | 22.6 s |
+
+The reranker never made the context worse and improved it on three questions of
+twelve, twice by a lot: on "how much experience does the author have" the
+prompt went from two passages out of five from the right document to five out
+of five, and on "how would you design a production agent" from three to five.
+Those are the questions where the corpus has plenty to say and the fused list
+comes back noisy.
+
+It bought no answer at all. Every metric that scores the answer came out the
+same, because on these questions one correct passage is enough and it reached
+the prompt either way. The price is 1.26 seconds per question, which is the
+part a person waiting for an answer actually feels.
+
+So on this corpus the reranker is switched off, and the measurement says when
+to switch it back on: when a question needs more than one passage from the
+right document, or when the corpus grows enough for the fused list to get
+dirtier. That decision is now a number rather than an opinion, which is the
+whole reason for building it.
+
+A side observation from the same run: four questions scored 0.2 on context
+precision in both configurations - one passage of five from the expected
+document - and were answered correctly all the same. Five passages is more
+than this corpus needs.
+
 ## Alternatives considered
 
 - **A hosted reranker** (Cohere, Voyage, Jina). Better models, roughly 100 ms,
