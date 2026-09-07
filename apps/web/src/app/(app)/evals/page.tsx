@@ -188,16 +188,8 @@ function Datasets({
  * chat turn does; pinned to a version it runs that graph instead, so two
  * versions can be measured on the same questions with the same bot.
  */
-function PipelineVersionSelect({
-  pipelines,
-  value,
-  onChange,
-}: {
-  pipelines: Pipeline[];
-  value: number | null;
-  onChange: (id: number | null) => void;
-}) {
-  const versions = useQuery({
+function usePipelineVersions(pipelines: Pipeline[]) {
+  return useQuery({
     queryKey: ["pipeline-versions", pipelines.map((p) => p.id)],
     enabled: pipelines.length > 0,
     queryFn: async () => {
@@ -210,6 +202,28 @@ function PipelineVersionSelect({
       return lists.flat();
     },
   });
+}
+
+/** The name a person saw when they saved it, not the row id they never see. */
+function versionName(
+  versions: { pipeline: Pipeline; version: PipelineVersion }[] | undefined,
+  versionId: number,
+): string {
+  const found = versions?.find((v) => v.version.id === versionId);
+  if (!found) return `version ${versionId}`;
+  return `${found.pipeline.name} - ${found.version.label ?? `version ${versionId}`}`;
+}
+
+function PipelineVersionSelect({
+  pipelines,
+  value,
+  onChange,
+}: {
+  pipelines: Pipeline[];
+  value: number | null;
+  onChange: (id: number | null) => void;
+}) {
+  const versions = usePipelineVersions(pipelines);
 
   return (
     <select
@@ -286,6 +300,7 @@ function Runs({ datasetId }: { datasetId: number }) {
     queryFn: () => api.get<Metric[]>("/evals/metrics"),
   });
 
+  const versions = usePipelineVersions(pipelines.data ?? []);
   const [botId, setBotId] = useState<number | null>(null);
   // Pinning a version is how two graphs are compared on one dataset: same
   // questions, same bot, one node different.
@@ -431,7 +446,7 @@ function Runs({ datasetId }: { datasetId: number }) {
                       {/* Two runs that differ only by graph are otherwise
                           indistinguishable in this list */}
                       {run.pipeline_version_id !== null &&
-                        ` · pipeline v${run.pipeline_version_id}`}
+                        ` · ${versionName(versions.data, run.pipeline_version_id)}`}
                     </div>
                     {isWorking(run) && <RunProgress run={run} />}
                     {run.error && <div className="text-xs text-red-600">{run.error}</div>}

@@ -24,7 +24,52 @@ type Bot = {
   num_k: number;
   source_ids: number[];
   current_version_id: number | null;
+  pipeline_id: number | null;
 };
+
+type Pipeline = {
+  id: number;
+  name: string;
+  current_version_id: number | null;
+};
+
+type PipelineVersion = { id: number; label: string | null; is_current: boolean };
+
+/**
+ * Which graph the bot is actually running right now.
+ *
+ * A pipeline has versions and one of them is current; a bot points at the
+ * pipeline, not at a version. Without saying so somewhere, "current" means two
+ * different things on two screens and neither says what the bot serves.
+ */
+function ActiveVersion({ pipelineId }: { pipelineId: number | null }) {
+  const versions = useQuery({
+    queryKey: ["pipeline-versions", pipelineId],
+    enabled: pipelineId !== null,
+    queryFn: () => api.get<PipelineVersion[]>(`/pipelines/${pipelineId}/versions`),
+  });
+
+  if (pipelineId === null) {
+    return (
+      <p className="text-xs text-slate-500">
+        Hybrid retrieval, reranking, five passages. Edit it by creating a pipeline.
+      </p>
+    );
+  }
+  const current = versions.data?.find((v) => v.is_current);
+  return (
+    <p className="text-xs text-slate-500">
+      {current ? (
+        <>
+          Serving <strong className="text-slate-700">{current.label ?? `version ${current.id}`}</strong>
+          {" - "}the version marked current in that pipeline.
+        </>
+      ) : (
+        "This pipeline has no current version, so the bot falls back to the built-in default."
+      )}
+    </p>
+  );
+}
 
 export default function BotSettingsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -39,6 +84,10 @@ export default function BotSettingsPage({ params }: { params: Promise<{ id: stri
   const tree = useQuery({
     queryKey: ["sources", "tree"],
     queryFn: () => api.get<SourceNode[]>("/sources/tree"),
+  });
+  const pipelines = useQuery({
+    queryKey: ["pipelines"],
+    queryFn: () => api.get<Pipeline[]>("/pipelines"),
   });
 
   const [form, setForm] = useState<Bot | null>(null);
@@ -57,6 +106,7 @@ export default function BotSettingsPage({ params }: { params: Promise<{ id: stri
         llm_model: form?.llm_model,
         temperature: model && !model.supports_temperature ? 0 : form?.temperature,
         num_k: form?.num_k,
+        pipeline_id: form?.pipeline_id,
         source_ids: form?.source_ids,
       }),
     onSuccess: (updated) => {
@@ -203,6 +253,33 @@ export default function BotSettingsPage({ params }: { params: Promise<{ id: stri
               />
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Pipeline</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <LabelWithHelp
+            htmlFor="bot-pipeline"
+            label="Retrieval pipeline"
+            help="The graph every question goes through: which retrievers run, whether results are reranked, how much context is built. Left on the built-in default the bot uses hybrid retrieval with a reranker; pointed at a pipeline it follows that pipeline's current version, and changing which version is current changes what this bot serves."
+          />
+          <select
+            id="bot-pipeline"
+            value={form.pipeline_id ?? ""}
+            onChange={(e) =>
+              patch({ pipeline_id: e.target.value ? Number(e.target.value) : null })
+            }
+            className="w-full h-9 rounded border border-slate-300 px-2 text-sm bg-white"
+          >
+            <option value="">Built-in default</option>
+            {pipelines.data?.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <ActiveVersion pipelineId={form.pipeline_id} />
         </CardContent>
       </Card>
 
