@@ -38,6 +38,7 @@ async def test_flush_without_a_client_is_a_no_op() -> None:
 class FakeObservation:
     def __init__(self, name: str = "root") -> None:
         self.name = name
+        self.opened_with: dict[str, Any] = {}
         self.updates: list[dict[str, Any]] = []
         self.children: list[FakeObservation] = []
         self.ended = False
@@ -62,6 +63,7 @@ class FakeLangfuse:
 
     def start_observation(self, **kwargs: Any) -> FakeObservation:
         observation = FakeObservation(str(kwargs.get("name", "")))
+        observation.opened_with = kwargs
         self.observations.append(observation)
         return observation
 
@@ -189,3 +191,15 @@ def test_the_sampler_keeps_a_request_and_drops_the_plumbing() -> None:
     )
     # The turn's own span: internal, no attributes, and the thing we came for
     assert decide(name="rag.turn", kind=SpanKind.INTERNAL) is Decision.RECORD_AND_SAMPLE
+
+
+async def test_the_question_is_the_root_of_the_trace(fake_client: FakeLangfuse) -> None:
+    """Without it the root of every trace reads "undefined".
+
+    Finding the turn you meant then means opening its children one at a time,
+    which is the opposite of what a list of traces is for.
+    """
+    start_turn("rag.turn", input_data="How many vacation days?", metadata={"org_id": 1})
+
+    (root,) = fake_client.observations
+    assert root.opened_with["input"] == "How many vacation days?"

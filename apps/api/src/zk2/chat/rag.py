@@ -231,6 +231,7 @@ async def stream_rag(
 
     turn = start_turn(
         "rag.turn",
+        input_data=user_message,
         metadata={
             "org_id": org_id,
             "bot_id": bot.id,

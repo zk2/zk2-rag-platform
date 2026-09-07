@@ -373,8 +373,10 @@ async def test_the_trace_of_an_item_is_closed(
         def end(self, **fields: Any) -> None:
             ended.append(fields)
 
-    def _start_turn(name: str, *, metadata: dict[str, Any] | None = None) -> TurnTrace:
-        del name, metadata
+    def _start_turn(
+        name: str, *, input_data: Any = None, metadata: dict[str, Any] | None = None
+    ) -> TurnTrace:
+        del name, input_data, metadata
         return SpyTurn()
 
     monkeypatch.setattr(runner_module, "start_turn", _start_turn)

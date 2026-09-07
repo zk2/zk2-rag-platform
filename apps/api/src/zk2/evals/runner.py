@@ -197,7 +197,11 @@ async def execute_run(db: AsyncSession, *, run_id: int, settings: RunSettings) -
         # it is closed, so a root nobody closes is never sent - and its
         # children arrive naming a parent that does not exist, which puts a
         # whole eval run outside every view that lists traces.
-        turn = start_turn("eval.item", metadata={"run_id": run.id, "item_id": item.id})
+        turn = start_turn(
+            "eval.item",
+            input_data=item.question,
+            metadata={"run_id": run.id, "item_id": item.id},
+        )
         ctx = NodeContext(
             db=db,
             org_id=run.org_id,
@@ -215,7 +219,7 @@ async def execute_run(db: AsyncSession, *, run_id: int, settings: RunSettings) -
 
         scores = {} if error else await _score_item(state, item, settings, judge)
         turn.end(
-            output={"question": item.question, "metrics": scores},
+            output={"metrics": scores},
             level="ERROR" if error else "DEFAULT",
             status_message=error[:500] if error else None,
         )

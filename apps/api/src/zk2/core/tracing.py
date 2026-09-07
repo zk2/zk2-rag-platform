@@ -133,8 +133,14 @@ class TurnTrace:
         self.root.end(**fields)
 
 
-def start_turn(name: str, *, metadata: dict[str, Any] | None = None) -> TurnTrace:
-    """Begin a traced chat turn."""
+def start_turn(
+    name: str, *, input_data: Any = None, metadata: dict[str, Any] | None = None
+) -> TurnTrace:
+    """Begin a traced chat turn.
+
+    `input_data` is the question. Without it the root of every trace reads
+    "undefined", and finding the turn you meant means opening its children.
+    """
     tracer = otel_trace.get_tracer(_TRACER_NAME)
     otel_span = tracer.start_span(name)
     for key, value in (metadata or {}).items():
@@ -147,7 +153,9 @@ def start_turn(name: str, *, metadata: dict[str, Any] | None = None) -> TurnTrac
     trace_url = None
     if client is not None:
         try:
-            observation = client.start_observation(name=name, as_type="span", metadata=metadata)
+            observation = client.start_observation(
+                name=name, as_type="span", input=input_data, metadata=metadata
+            )
             trace_id = client.get_current_trace_id() or observation.trace_id
             trace_url = client.get_trace_url(trace_id=trace_id) if trace_id else None
         except Exception:
