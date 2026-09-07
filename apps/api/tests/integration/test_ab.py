@@ -316,3 +316,45 @@ async def test_an_experiment_needs_two_different_graphs(
 
     assert started.status_code == 422, started.text
     assert "same graph as the control" in started.json()["error"]["message"]
+
+
+async def test_a_finished_experiment_does_not_start_again(
+    owner_client: AsyncClient,
+) -> None:
+    """Stopped is the end of a measurement, not a pause.
+
+    Restarting would fold a second period of traffic into numbers already
+    attached to the first, and the two are not comparable. The interface hid
+    the Start button and said nothing, which reads as a broken screen.
+    """
+    bot_id, version_id = await _bot_and_variant_version(owner_client)
+    experiment = await _create_experiment(owner_client, bot_id, version_id)
+    await owner_client.post(f"/experiments/{experiment['id']}/start")
+    await owner_client.post(f"/experiments/{experiment['id']}/stop")
+
+    again = await owner_client.post(f"/experiments/{experiment['id']}/start")
+    assert again.status_code == 422, again.text
+    assert "Create a new one" in again.json()["error"]["message"]
+
+
+async def test_an_experiment_can_be_discarded(owner_client: AsyncClient) -> None:
+    """The split cannot be edited after creation, so a wrong one needs a way out."""
+    bot_id, version_id = await _bot_and_variant_version(owner_client)
+    experiment = await _create_experiment(owner_client, bot_id, version_id, split=(90, 10))
+
+    deleted = await owner_client.delete(f"/experiments/{experiment['id']}")
+    assert deleted.status_code == 200, deleted.text
+    listed = await owner_client.get(f"/experiments?bot_id={bot_id}")
+    assert all(e["id"] != experiment["id"] for e in listed.json())
+
+
+async def test_a_running_experiment_is_stopped_before_it_is_discarded(
+    owner_client: AsyncClient,
+) -> None:
+    bot_id, version_id = await _bot_and_variant_version(owner_client)
+    experiment = await _create_experiment(owner_client, bot_id, version_id)
+    await owner_client.post(f"/experiments/{experiment['id']}/start")
+
+    refused = await owner_client.delete(f"/experiments/{experiment['id']}")
+    assert refused.status_code == 422
+    assert "Stop the experiment" in refused.json()["error"]["message"]

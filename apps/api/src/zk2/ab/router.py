@@ -134,6 +134,34 @@ async def stop_experiment(
     return await _to_dto(db, experiment)
 
 
+@router.delete("/{experiment_id}")
+async def delete_experiment(
+    experiment_id: int,
+    ctx: Annotated[OrgContext, Depends(require_org("editor"))],
+    db: Annotated[AsyncSession, Depends(get_db_dep)],
+) -> dict[str, str]:
+    """Discard an experiment. A running one has to be stopped first.
+
+    The split cannot be edited after creation, so getting it wrong used to be a
+    dead end: the experiment sat there for good and the only way forward was to
+    create another one beside it.
+    """
+    experiment = await require_experiment(db, org_id=ctx.org_id, experiment_id=experiment_id)
+    if experiment.status == "running":
+        raise ValidationError("Stop the experiment before deleting it")
+    await write_audit(
+        db,
+        action="ab.experiment.deleted",
+        actor_user_id=ctx.user.id,
+        org_id=ctx.org_id,
+        target=str(experiment.id),
+        payload={"name": experiment.name, "status": experiment.status},
+    )
+    await db.delete(experiment)
+    await db.flush()
+    return {"status": "deleted"}
+
+
 @router.get("/{experiment_id}/stats", response_model=list[VariantStatsDto])
 async def experiment_stats(
     experiment_id: int,

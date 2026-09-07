@@ -6,11 +6,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LabelWithHelp } from "@/components/ui/help-tip";
+import { HelpTip, LabelWithHelp } from "@/components/ui/help-tip";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import type { Pipeline, PipelineVersion } from "@/lib/pipelines";
-import { ArrowLeft, Play, Square, Trophy } from "lucide-react";
+import { ArrowLeft, Play, Square, Trash2, Trophy } from "lucide-react";
 
 /** The graph an arm runs, by the name someone gave it when they saved it. */
 function armGraph(
@@ -93,6 +93,10 @@ export default function AbPage({ params }: { params: Promise<{ id: string }> }) 
   const act = useMutation({
     mutationFn: ({ id: experimentId, action }: { id: number; action: string }) =>
       api.post(`/experiments/${experimentId}/${action}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["experiments", botId] }),
+  });
+  const remove = useMutation({
+    mutationFn: (id: number) => api.delete(`/experiments/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["experiments", botId] }),
   });
   const promote = useMutation({
@@ -208,7 +212,8 @@ export default function AbPage({ params }: { params: Promise<{ id: string }> }) 
           versions={versions.data}
           onAction={(action) => act.mutate({ id: experiment.id, action })}
           onPromote={(variantId) => promote.mutate({ id: experiment.id, variantId })}
-          error={(act.error ?? promote.error) as Error | null}
+          onDelete={() => remove.mutate(experiment.id)}
+          error={(act.error ?? promote.error ?? remove.error) as Error | null}
         />
       ))}
     </div>
@@ -220,12 +225,14 @@ function ExperimentCard({
   versions,
   onAction,
   onPromote,
+  onDelete,
   error,
 }: {
   experiment: Experiment;
   versions: PipelineVersion[] | undefined;
   onAction: (action: string) => void;
   onPromote: (variantId: number) => void;
+  onDelete: () => void;
   error: Error | null;
 }) {
   const stats = useQuery({
@@ -262,10 +269,31 @@ function ExperimentCard({
                 <Square className="size-4 mr-1" /> Stop
               </Button>
             )}
+            {experiment.status !== "running" && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  if (confirm(`Delete "${experiment.name}" and its results?`)) onDelete();
+                }}
+              >
+                <Trash2 className="size-4 mr-1" /> Delete
+              </Button>
+            )}
           </div>
         </div>
       </CardHeader>
       <CardContent>
+        {/* The lifecycle is draft, running, stopped - and stopped is the end.
+            Without saying so, a missing Start button reads as a broken screen. */}
+        {experiment.status === "stopped" && (
+          <p className="mb-3 text-xs text-slate-500">
+            Finished. Its numbers are a measurement of one period of traffic, so it does not
+            start again - create a new experiment to run another test. The split cannot be
+            edited after creation either, so a wrong one is fixed by deleting this and making
+            another.
+          </p>
+        )}
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
@@ -304,9 +332,36 @@ function ExperimentCard({
                 <td className="py-2 text-right tabular-nums">${row.cost_usd}</td>
                 <td className="py-2 text-right">
                   {!row.is_control && experiment.status !== "stopped" && (
-                    <Button size="sm" variant="outline" onClick={() => onPromote(row.variant_id)}>
-                      <Trophy className="size-4 mr-1" /> Promote
-                    </Button>
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          // Three consequential things behind one button: it
+                          // used to do all of them with no warning, and that
+                          // is how a running experiment came to compare a
+                          // graph with itself.
+                          const graph = armGraph(experiment, versions, row.variant_id);
+                          if (
+                            confirm(
+                              `Ship "${graph}" to everyone?\n\n` +
+                                "It becomes the pipeline's current version, the bot starts " +
+                                "serving it, and this experiment stops. Conversations still " +
+                                "running keep the variant they were given.",
+                            )
+                          )
+                            onPromote(row.variant_id);
+                        }}
+                      >
+                        <Trophy className="size-4 mr-1" /> Promote
+                      </Button>
+                      <HelpTip side="left">
+                        Ship this variant to everyone: its version becomes the pipeline&apos;s
+                        current one, the bot is pointed at it, and the experiment stops. This is
+                        the button that ends a test by adopting its winner - not a way to look
+                        at one.
+                      </HelpTip>
+                    </div>
                   )}
                 </td>
               </tr>

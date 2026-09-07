@@ -105,6 +105,12 @@ async def start(db: AsyncSession, experiment: AbExperiment) -> AbExperiment:
     )
     validate_split(list(variants))
 
+    if experiment.status == "stopped":
+        # A stopped experiment is a finished measurement with assignments and
+        # usage already attached to it. Restarting would fold a second period
+        # of traffic into the same numbers, and the two are not comparable.
+        raise ValidationError("This experiment has finished. Create a new one to run another test")
+
     other = await running_experiment(db, bot_id=experiment.bot_id)
     if other is not None and other.id != experiment.id:
         raise ValidationError(
