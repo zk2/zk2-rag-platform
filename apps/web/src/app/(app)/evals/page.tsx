@@ -214,6 +214,18 @@ function versionName(
   return `${found.pipeline.name} - ${found.version.label ?? `version ${versionId}`}`;
 }
 
+/** The graph a given run executed, said the way the rest of the screen says it. */
+function runVersionName(
+  runs: Run[] | undefined,
+  versions: { pipeline: Pipeline; version: PipelineVersion }[] | undefined,
+  runId: number,
+): string {
+  const run = runs?.find((r) => r.id === runId);
+  if (!run) return `run ${runId}`;
+  if (run.pipeline_version_id === null) return "the bot's own pipeline";
+  return versionName(versions, run.pipeline_version_id);
+}
+
 function PipelineVersionSelect({
   pipelines,
   value,
@@ -460,9 +472,17 @@ function Runs({ datasetId }: { datasetId: number }) {
                           key={other.id}
                           size="sm"
                           variant="outline"
+                          title={`Compare with ${other.label || `Run ${other.id}`}${
+                            other.pipeline_version_id !== null
+                              ? ` (${versionName(versions.data, other.pipeline_version_id)})`
+                              : ""
+                          }`}
                           onClick={() => setCompareWith([other.id, run.id])}
                         >
-                          <FlaskConical className="size-4 mr-1" /> vs {other.id}
+                          {/* "vs 10" meant nothing: a run id, next to a version
+                              label, under a version selector - three numbering
+                              schemes on one screen and no way to tell them apart */}
+                          <FlaskConical className="size-4 mr-1" /> vs {other.label || `Run ${other.id}`}
                         </Button>
                       ))}
                   </div>
@@ -480,6 +500,18 @@ function Runs({ datasetId }: { datasetId: number }) {
             <CardTitle>
               Run {comparison.data.baseline_run_id} vs {comparison.data.candidate_run_id}
             </CardTitle>
+            {/* Which graph each side ran. Two runs of the same dataset differ
+                only by that, and the numbers mean nothing without it. */}
+            <div className="mt-1 grid grid-cols-1 gap-0.5 text-xs text-slate-500 sm:grid-cols-2">
+              <div>
+                <span className="uppercase tracking-wide">Baseline</span> -{" "}
+                {runVersionName(runs.data, versions.data, comparison.data.baseline_run_id)}
+              </div>
+              <div>
+                <span className="uppercase tracking-wide">Candidate</span> -{" "}
+                {runVersionName(runs.data, versions.data, comparison.data.candidate_run_id)}
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             {comparison.data.regressions.length > 0 ? (

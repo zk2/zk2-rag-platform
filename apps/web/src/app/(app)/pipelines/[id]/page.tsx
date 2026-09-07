@@ -385,7 +385,9 @@ function VersionList({
             <div className="text-sm text-slate-900 truncate">{v.label || `Version ${v.id}`}</div>
             <div className="text-[10px] text-slate-500">
               {new Date(v.created_at).toLocaleString()}
-              {v.is_current && <span className="ml-1 text-emerald-700">· current</span>}
+              {v.is_current && (
+                <span className="ml-1 text-emerald-700">· current, this is what bots serve</span>
+              )}
             </div>
           </div>
           {!v.is_current && (
