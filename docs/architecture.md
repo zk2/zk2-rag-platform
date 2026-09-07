@@ -114,6 +114,7 @@ sequenceDiagram
   A->>P: execute DAG
   P->>DB: dense search (pgvector)
   P->>DB: lexical search (tsvector, source language)
+  Note over P,DB: the query matches any of its words, not all of them,<br/>with stopwords of every indexed language stripped first
   P->>P: RRF fusion, then rerank
   P-->>U: {type: sources}
   P->>L: stream completion with numbered passages
@@ -126,7 +127,9 @@ sequenceDiagram
 ```
 
 The token expiry is re-checked before every turn, because a socket outlives the
-15-minute access token that opened it.
+15-minute access token that opened it. The browser recognises that refusal,
+refreshes, reconnects and sends the refused question again, so a conversation
+survives its own token without the reader being told anything.
 
 ## A document, end to end
 
