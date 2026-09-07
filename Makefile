@@ -210,6 +210,16 @@ prod-seed-demo: ## Add demo documents, a bot, a pipeline and a golden set
 prod-deploy: prod-build prod-up ## Rebuild the images and roll the stack over
 	$(PROD_COMPOSE) ps
 
+.PHONY: prod-clean
+prod-clean: ## Reclaim disk: build cache and untagged images
+	@# Deliberately narrow. `system prune -a` would also drop every image no
+	@# container is running right now - postgres, redis, langfuse - and the next
+	@# deploy would pull them all again. `--volumes` would drop the uploads, the
+	@# database and the reranker model. Neither is worth the disk.
+	docker builder prune -af
+	docker image prune -f
+	docker system df
+
 ## ── Observability tunnels ────────────────────────────────────
 
 # Grafana, Jaeger and Prometheus are loopback-bound on the deployment host.

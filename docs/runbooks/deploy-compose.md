@@ -111,6 +111,22 @@ Rolling back an image is `git checkout <tag> && make prod-deploy`; rolling back
 a migration is `docker compose ... run --rm migrate alembic downgrade -1` and
 has to happen before the older image starts.
 
+### Reclaiming disk after a few of those
+
+Every rebuild leaves its layers in the BuildKit cache, and with PyTorch in the
+image they are not small: eight deploys took the cache past 17 GB, more than
+three times the images themselves.
+
+```bash
+make prod-clean      # build cache and untagged images, then a size report
+```
+
+It is deliberately narrow. `docker system prune -a` would also drop every image
+without a running container - postgres, redis, langfuse - and the next deploy
+would pull them all again; `--volumes` would drop the uploads, the database and
+the baked reranker model. The only cost of `prod-clean` is that the next build
+runs without a cache to reuse.
+
 ## Observability
 
 Nothing is published to the internet. Tunnel in:

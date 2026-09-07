@@ -200,6 +200,11 @@ If that is too much, `RERANK_ENABLED=false` turns reranking off and
 `uv sync` without `--extra rerank` leaves torch out of a local environment
 entirely. Retrieval then keeps the fused order instead of failing.
 
+Rebuilding repeatedly is what actually fills a disk - the build cache grew past
+17 GB on the deployment, more than three times the images. `make prod-clean`
+drops it along with any untagged image, and touches neither the volumes nor the
+images the stack still needs.
+
 ---
 
 ## When something does not work
