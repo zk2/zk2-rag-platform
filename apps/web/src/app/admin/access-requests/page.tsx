@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { HelpTip } from "@/components/ui/help-tip";
 import { api } from "@/lib/api";
 
 type AccessRequest = {
@@ -90,11 +91,18 @@ function RequestRow({
         </div>
         {request.status === "pending" && (
           <div className="flex flex-col gap-2 w-64">
-            <Input
-              value={orgName}
-              onChange={(e) => setOrgName(e.target.value)}
-              placeholder="Org name"
-            />
+            <div className="flex items-center gap-1.5">
+              <Input
+                value={orgName}
+                onChange={(e) => setOrgName(e.target.value)}
+                placeholder="Org name"
+              />
+              <HelpTip side="left">
+                Approving creates an organization and invites this person into it as its owner.
+                The name is what they will see; everything they upload afterwards lives inside it
+                and is visible to nobody outside.
+              </HelpTip>
+            </div>
             <div className="flex gap-2">
               <Button
                 size="sm"

@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LabelWithHelp } from "@/components/ui/help-tip";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import { Plug, RefreshCw, Trash2, Wrench } from "lucide-react";
@@ -100,7 +101,11 @@ function ServersCard() {
             </p>
           </div>
           <div>
-            <Label htmlFor="mcp-url">URL</Label>
+            <LabelWithHelp
+              htmlFor="mcp-url"
+              label="URL"
+              help="An MCP server whose tools the agent may call. Its tools run with whatever access that server has, and its replies go into the prompt - so add only servers you would trust with the conversation."
+            />
             <Input
               id="mcp-url"
               value={url}

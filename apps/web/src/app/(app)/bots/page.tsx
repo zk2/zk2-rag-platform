@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { HelpTip, LabelWithHelp } from "@/components/ui/help-tip";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
@@ -134,7 +135,11 @@ function CreateBotCard() {
           <Input id="bot-name" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
         <div>
-          <Label htmlFor="bot-prompt">System prompt</Label>
+          <LabelWithHelp
+            htmlFor="bot-prompt"
+            label="System prompt"
+            help="Who the bot is and how it should answer. The instruction to answer only from the retrieved passages, and to cite them, is appended automatically - repeating it here measures the duplication rather than your prompt."
+          />
           <Textarea
             id="bot-prompt"
             rows={4}
@@ -144,7 +149,11 @@ function CreateBotCard() {
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <Label htmlFor="bot-model">Model</Label>
+            <LabelWithHelp
+              htmlFor="bot-model"
+              label="Model"
+              help="The model that writes the answer from the retrieved passages. Most of the wait and most of the bill; what it gets to read is decided by the retrieval settings."
+            />
             <select
               id="bot-model"
               value={model}
@@ -166,7 +175,11 @@ function CreateBotCard() {
             )}
           </div>
           <div>
-            <Label htmlFor="bot-k">k</Label>
+            <LabelWithHelp
+              htmlFor="bot-k"
+              label="k"
+              help="How many passages reach the prompt. Too few and the answer is missing; too many and the right one is buried among near-misses, and every extra one is paid for on every question. Five is a sensible start."
+            />
             <Input
               id="bot-k"
               type="number"
@@ -178,7 +191,13 @@ function CreateBotCard() {
           </div>
         </div>
         <div>
-          <Label>Sources</Label>
+          <Label>
+            Sources
+            <HelpTip>
+              What this bot is allowed to search. Ticking a folder includes everything inside it,
+              now and later. A document nobody ticked cannot be found, however well it is indexed.
+            </HelpTip>
+          </Label>
           <div className="max-h-40 overflow-auto border border-slate-200 rounded p-2 text-sm space-y-1">
             {tree.data?.length ? (
               <SourcePicker

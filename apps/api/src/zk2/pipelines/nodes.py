@@ -67,7 +67,16 @@ class Node(ABC):
 
 
 class DenseConfig(BaseModel):
-    k: int = Field(20, ge=1, le=200, description="Candidates to fetch")
+    k: int = Field(
+        20,
+        ge=1,
+        le=200,
+        description=(
+            "How many passages semantic search hands to fusion. Wider costs "
+            "almost nothing here - the work is one index lookup - and gives "
+            "fusion and the reranker more to choose from."
+        ),
+    )
 
 
 class DenseRetriever(Node):
@@ -100,7 +109,16 @@ class DenseRetriever(Node):
 
 
 class Bm25Config(BaseModel):
-    k: int = Field(20, ge=1, le=200, description="Candidates to fetch")
+    k: int = Field(
+        20,
+        ge=1,
+        le=200,
+        description=(
+            "How many passages word matching hands to fusion. This is the half "
+            "that finds names, error codes and identifiers, which embeddings "
+            "are worst at."
+        ),
+    )
 
 
 class Bm25Retriever(Node):
@@ -130,9 +148,36 @@ class Bm25Retriever(Node):
 
 
 class FusionConfig(BaseModel):
-    method: str = Field("rrf", pattern="^rrf$", description="Fusion method")
-    k: int = Field(60, ge=1, le=1000, description="RRF smoothing constant")
-    limit: int = Field(30, ge=1, le=200, description="Candidates kept after fusion")
+    method: str = Field(
+        "rrf",
+        pattern="^rrf$",
+        description=(
+            "Reciprocal rank fusion: the two lists are merged by position, not "
+            "by score, because a cosine similarity and a text rank are not "
+            "comparable numbers."
+        ),
+    )
+    k: int = Field(
+        60,
+        ge=1,
+        le=1000,
+        description=(
+            "How much a top position outweighs the ones below it. Lower makes "
+            "first place decisive; higher flattens the ranking so agreement "
+            "between the two retrievers matters more. 60 is the usual default."
+        ),
+    )
+    limit: int = Field(
+        30,
+        ge=1,
+        le=200,
+        description=(
+            "How many candidates continue past fusion. With a reranker after "
+            "it, this is its shortlist. Without one, this is what lands in the "
+            "prompt and is paid for on every question - set it to the number "
+            "of passages you actually want the model to read."
+        ),
+    )
 
 
 class Fusion(Node):
@@ -153,7 +198,16 @@ class Fusion(Node):
 
 
 class RerankConfig(BaseModel):
-    top_k: int = Field(5, ge=1, le=50, description="Passages kept after reranking")
+    top_k: int = Field(
+        5,
+        ge=1,
+        le=50,
+        description=(
+            "How many passages survive reranking and reach the prompt. The "
+            "cross-encoder reads query and passage together, so it is slow and "
+            "accurate: it earns its place by letting this number be small."
+        ),
+    )
 
 
 class Rerank(Node):
@@ -183,8 +237,25 @@ class Rerank(Node):
 
 
 class ContextConfig(BaseModel):
-    token_budget: int = Field(6000, ge=200, le=200_000, description="Context token budget")
-    emit_sources: bool = Field(True, description="Send the sources event to the client")
+    token_budget: int = Field(
+        6000,
+        ge=200,
+        le=200_000,
+        description=(
+            "The ceiling on retrieved text in the prompt. Passages are packed "
+            "in ranked order until it is reached and the rest are dropped, so "
+            "this is the last defence against a wide retriever running up the "
+            "bill on every question."
+        ),
+    )
+    emit_sources: bool = Field(
+        True,
+        description=(
+            "Show the reader which passages were retrieved, before the answer "
+            "arrives. Turning it off hides the workings - and with them any "
+            "chance of noticing that the answer used none of them."
+        ),
+    )
 
 
 class ContextBuilder(Node):
@@ -250,12 +321,34 @@ class ContextBuilder(Node):
 
 
 class GenerateConfig(BaseModel):
-    provider: str | None = Field(None, description="Overrides the bot's provider")
-    model: str | None = Field(None, description="Overrides the bot's model")
+    provider: str | None = Field(
+        None, description="Answer with a different provider than the bot's, for this node only"
+    )
+    model: str | None = Field(
+        None,
+        description=(
+            "Answer with a different model than the bot's. Pinning it here is "
+            "how two models are compared on one pipeline."
+        ),
+    )
     temperature: float | None = Field(None, ge=0, le=2)
     max_tokens: int | None = Field(None, ge=1, le=128_000)
-    system_prompt: str | None = Field(None, max_length=20_000, description="Overrides the bot's")
-    cite_sources: bool = Field(True, description="Ask the model to cite passage numbers")
+    system_prompt: str | None = Field(
+        None,
+        max_length=20_000,
+        description=(
+            "Replaces the bot's own prompt for this node. The grounding and "
+            "citation instructions are still appended - do not repeat them."
+        ),
+    )
+    cite_sources: bool = Field(
+        True,
+        description=(
+            "Ask for [1]-style markers naming the passages actually used. "
+            "Without them an answer cannot be checked against its sources, and "
+            "the citation metrics have nothing to measure."
+        ),
+    )
 
 
 class Generate(Node):
@@ -347,16 +440,40 @@ class Generate(Node):
 
 
 class AgentConfig(BaseModel):
-    provider: str | None = Field(None, description="Overrides the bot's provider")
-    model: str | None = Field(None, description="Overrides the bot's model")
+    provider: str | None = Field(
+        None, description="Answer with a different provider than the bot's, for this node only"
+    )
+    model: str | None = Field(
+        None,
+        description=(
+            "Answer with a different model than the bot's. Pinning it here is "
+            "how two models are compared on one pipeline."
+        ),
+    )
     temperature: float | None = Field(None, ge=0, le=2)
     max_tokens: int | None = Field(None, ge=1, le=128_000)
     system_prompt: str | None = Field(None, max_length=20_000)
     tools: list[str] = Field(
         default_factory=list, description="Tool names to offer; empty means all available"
     )
-    max_steps: int = Field(8, ge=1, le=30, description="Tool-call rounds before giving up")
-    use_context: bool = Field(True, description="Include retrieved passages in the prompt")
+    max_steps: int = Field(
+        8,
+        ge=1,
+        le=30,
+        description=(
+            "How many rounds of tool calls before the agent is stopped. This "
+            "is the limit on what one question can cost when the model keeps "
+            "deciding it needs one more lookup."
+        ),
+    )
+    use_context: bool = Field(
+        True,
+        description=(
+            "Give the agent the retrieved passages as well as its tools. Off, "
+            "it works from tools alone - which is the right choice only when "
+            "the answer is never in the documents."
+        ),
+    )
 
 
 class Agent(Node):

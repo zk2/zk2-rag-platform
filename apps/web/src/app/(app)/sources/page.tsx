@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { HelpTip } from "@/components/ui/help-tip";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import {
@@ -225,16 +226,21 @@ function Field({
   label,
   htmlFor,
   className,
+  help,
   children,
 }: {
   label: string;
   htmlFor?: string;
   className?: string;
+  help?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className={className}>
-      <Label htmlFor={htmlFor}>{label}</Label>
+      <Label htmlFor={htmlFor}>
+        {label}
+        {help && <HelpTip className="ml-1.5">{help}</HelpTip>}
+      </Label>
       {children}
     </div>
   );
@@ -342,7 +348,12 @@ function UploadFileForm() {
   });
   return (
     <div className="flex flex-wrap items-end gap-3">
-      <Field label="Inside" htmlFor="up-parent" className="w-56">
+      <Field
+        label="Inside"
+        htmlFor="up-parent"
+        className="w-56"
+        help="Which folder the document goes in. Folders are how a bot is pointed at a group of documents at once: ticking a folder in a bot's sources includes everything under it, including whatever is added later."
+      >
         <FolderSelect id="up-parent" value={parent} onChange={setParent} />
       </Field>
       <Button
@@ -386,7 +397,12 @@ function AddUrlForm() {
   });
   return (
     <div className="flex flex-wrap items-end gap-3">
-      <Field label="Page URL" htmlFor="url-value" className="min-w-64 flex-1">
+      <Field
+        label="Page URL"
+        htmlFor="url-value"
+        className="min-w-64 flex-1"
+        help="One page, fetched and indexed like an uploaded file. The address is resolved and checked before the request, so a URL that points inside the network is refused rather than fetched."
+      >
         <Input
           id="url-value"
           placeholder="https://example.com/pricing"
@@ -452,7 +468,12 @@ function ImportSitemapForm() {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-end gap-3">
-        <Field label="Site" htmlFor="sitemap-url" className="min-w-64 flex-1">
+        <Field
+          label="Site"
+          htmlFor="sitemap-url"
+          className="min-w-64 flex-1"
+          help="The site's own list of its pages, read from sitemap.xml or from robots.txt. Preview first: it shows what would be imported before anything is fetched or indexed."
+        >
           <Input
             id="sitemap-url"
             placeholder="https://example.com"
@@ -463,7 +484,12 @@ function ImportSitemapForm() {
             }}
           />
         </Field>
-        <Field label="Max pages" htmlFor="sitemap-limit" className="w-28">
+        <Field
+          label="Max pages"
+          htmlFor="sitemap-limit"
+          className="w-28"
+          help="A ceiling on how many pages are taken. Every page is fetched, chunked and embedded, so this is the difference between indexing a section of a site and indexing all of it by accident."
+        >
           <Input
             id="sitemap-limit"
             value={limit}

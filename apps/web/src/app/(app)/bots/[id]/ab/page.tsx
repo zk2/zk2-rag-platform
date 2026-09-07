@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LabelWithHelp } from "@/components/ui/help-tip";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import type { Pipeline, PipelineVersion } from "@/lib/pipelines";
@@ -117,7 +118,11 @@ export default function AbPage({ params }: { params: Promise<{ id: string }> }) 
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
-              <Label htmlFor="exp-pipeline">Candidate pipeline</Label>
+              <LabelWithHelp
+                htmlFor="exp-pipeline"
+                label="Candidate pipeline"
+                help="The graph being tried out. Everyone not assigned to it keeps talking to the bot's current pipeline, which is the control - so the two are measured on the same live questions rather than on a golden set."
+              />
               <select
                 id="exp-pipeline"
                 value={pipelineId ?? ""}
@@ -136,7 +141,11 @@ export default function AbPage({ params }: { params: Promise<{ id: string }> }) 
               </select>
             </div>
             <div>
-              <Label htmlFor="exp-version">Version</Label>
+              <LabelWithHelp
+                htmlFor="exp-version"
+                label="Version"
+                help="Which saved version of that pipeline the candidate serves. Pinning it means the experiment keeps measuring the same graph even if someone edits the pipeline while it runs."
+              />
               <select
                 id="exp-version"
                 value={versionId ?? ""}
@@ -154,7 +163,11 @@ export default function AbPage({ params }: { params: Promise<{ id: string }> }) 
               </select>
             </div>
             <div>
-              <Label htmlFor="exp-split">Candidate traffic: {split}%</Label>
+              <LabelWithHelp
+                htmlFor="exp-split"
+                label={`Candidate traffic: ${split}%`}
+                help="Share of conversations sent to the candidate. A conversation is assigned once and stays there, so a person does not see the pipeline change mid-chat. Start small: this is a change to what real users get, not a rehearsal."
+              />
               <input
                 id="exp-split"
                 type="range"

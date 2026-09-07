@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LabelWithHelp } from "@/components/ui/help-tip";
+import { HelpTip, LabelWithHelp } from "@/components/ui/help-tip";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import { useCatalog } from "@/lib/catalog";
@@ -78,6 +78,11 @@ function AllowanceBanner() {
           <>
             Shared keys: <strong>{data.used_tokens.toLocaleString()}</strong> of{" "}
             {data.limit_tokens.toLocaleString()} tokens used
+            <HelpTip className="ml-1.5">
+              Until you add a key of your own, this organization draws on the keys the deployment
+              owns - somebody else&apos;s bill, so it is capped. Indexing counts too: embedding a
+              corpus can spend the allowance before a single question is asked.
+            </HelpTip>
             {data.window_days > 0 && ` in the last ${data.window_days} days`}.
           </>
         )}
@@ -417,6 +422,11 @@ function ProviderRow({ provider }: { provider: string }) {
       <div>
         <Label htmlFor={`${provider}-key`}>
           {current?.has_key ? "Replace key" : "API key"}
+          <HelpTip className="ml-1.5">
+            Your own key for this provider. Encrypted before it is stored and never returned by
+            the API - the form can only overwrite it, never show it. With a key of your own this
+            organization stops drawing on the deployment&apos;s shared allowance.
+          </HelpTip>
         </Label>
         <Input
           id={`${provider}-key`}
@@ -428,11 +438,17 @@ function ProviderRow({ provider }: { provider: string }) {
       </div>
       <div className="flex gap-2">
         {provider === "ollama" && (
-          <Input
-            placeholder="Base URL"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-          />
+          <div className="flex items-center gap-1.5">
+            <Input
+              placeholder="Base URL"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+            />
+            <HelpTip>
+              Where Ollama is listening, if it is not the default. From inside a container
+              &quot;localhost&quot; is the container itself, not the machine running Ollama.
+            </HelpTip>
+          </div>
         )}
         <Button onClick={() => save.mutate()} disabled={save.isPending || !key}>
           {save.isPending ? "Saving…" : "Save"}

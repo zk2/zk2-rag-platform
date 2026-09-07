@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { HelpTip } from "@/components/ui/help-tip";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth-store";
 import { Activity, BarChart3, ExternalLink, Radar, ScrollText } from "lucide-react";
@@ -90,15 +91,20 @@ function StatTile({
   value,
   hint,
   tone = "default",
+  help,
 }: {
   label: string;
   value: string;
   hint?: string;
   tone?: "default" | "warning";
+  help?: React.ReactNode;
 }) {
   return (
     <div className="rounded border border-slate-200 p-4">
-      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-slate-500">
+        {label}
+        {help && <HelpTip>{help}</HelpTip>}
+      </div>
       <div
         className={
           tone === "warning"
@@ -132,14 +138,26 @@ function UsagePanel({ usage, loading }: { usage?: UsageSummary; loading: boolean
   const tokens = usage.tokens_in + usage.tokens_out;
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-      <StatTile label="LLM calls" value={formatNumber(usage.calls)} hint={`last ${usage.days} days`} />
+      <StatTile
+        label="LLM calls"
+        value={formatNumber(usage.calls)}
+        hint={`last ${usage.days} days`}
+        help="Every call to a model on this organization's behalf: chat turns, eval runs, and the judge metrics inside them. Indexing is counted separately - embeddings are not chat calls."
+      />
       <StatTile
         label="Tokens"
         value={formatNumber(tokens)}
         hint={`${formatNumber(usage.tokens_in)} in · ${formatNumber(usage.tokens_out)} out`}
+        help="In is everything the model read - the prompt, and with it every retrieved passage; out is what it wrote. Retrieval settings move the first number, and it is usually the larger one."
       />
-      <StatTile label="Spend" value={formatUsd(usage.cost_usd)} hint="estimated from the catalog" />
       <StatTile
+        label="Spend"
+        value={formatUsd(usage.cost_usd)}
+        hint="estimated from the catalog"
+        help="Computed from the token counts and this deployment's price list, not from a provider invoice. It is an estimate, and a model missing from the catalog contributes nothing to it - see unpriced calls."
+      />
+      <StatTile
+        help="Calls whose model is not in the price catalog. Their tokens are counted, their cost is not, so the spend above is an underestimate by exactly this much work."
         label="Unpriced calls"
         value={String(usage.calls_without_price)}
         hint={
