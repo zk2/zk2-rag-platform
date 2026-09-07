@@ -113,11 +113,36 @@ sat in fifth place. The apparent waste was margin. Context precision *rose*,
 0.63 to 0.69, because the hardest question fell out of the average along with
 its low score - a reminder of what optimising a single metric buys.
 
-Which sharpens what the reranker might be for. On that same question the
-reranker puts the useful passage first, where without it the passage is fifth.
-So its value may not be a better answer at five passages - measured, it is not -
-but permitting three, which is forty per cent off the input tokens of every
-question. That comparison is the next one to run.
+Which sharpened what the reranker is for, and the last run settled it:
+
+| | passages | cost | seconds | correctness | recall | precision |
+|---|---|---|---|---|---|---|
+| no rerank, five | 5 | $0.00339 | 56.8 | 0.98 | 1.00 | 0.63 |
+| no rerank, three | 3 | $0.00248 | 55.3 | 0.91 | 0.92 | 0.69 |
+| **rerank, three** | 3 | **$0.00247** | 78.1 | **0.98** | **1.00** | **0.78** |
+
+The reranker is what makes three passages safe. Same answers as the five-passage
+baseline on every metric, the cleanest context of any configuration, and 27 per
+cent off the input of every question - because it puts the useful passage first
+where fusion leaves it fifth. Three passages without it lose a question; three
+with it lose nothing.
+
+So the trade is explicit, and it has no single answer. It depends on who is
+waiting and what the model charges:
+
+- **A person waiting, on a cheap model.** 27 per cent of a 1240-token prompt on
+  gpt-4o-mini is about $0.00005 a question. Paying a second and a half of
+  someone's attention for that is a bad bargain: leave it off.
+- **An expensive model, or nobody waiting.** The same 27 per cent on a model at
+  $5 per million input tokens is $0.0017 a question - thirty times more - while
+  the reranker's second and a half does not change. Batch work and large
+  corpora both push the same way: a noisier fused list is exactly what a
+  cross-encoder is for.
+
+This deployment runs gpt-4o-mini with a person waiting, so the live bot serves
+the five-passage graph without reranking. The configuration to switch to, and
+the numbers that would justify switching, are written down above rather than
+left to be rediscovered.
 
 ## Alternatives considered
 
