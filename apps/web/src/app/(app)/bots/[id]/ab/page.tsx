@@ -12,6 +12,19 @@ import { api } from "@/lib/api";
 import type { Pipeline, PipelineVersion } from "@/lib/pipelines";
 import { ArrowLeft, Play, Square, Trophy } from "lucide-react";
 
+/** The graph an arm runs, by the name someone gave it when they saved it. */
+function armGraph(
+  experiment: Experiment,
+  versions: PipelineVersion[] | undefined,
+  variantId: number,
+): string {
+  const variant = experiment.variants.find((v) => v.id === variantId);
+  if (!variant) return "";
+  if (variant.pipeline_version_id === null) return "the bot's current pipeline";
+  const version = versions?.find((v) => v.id === variant.pipeline_version_id);
+  return version?.label ?? `version ${variant.pipeline_version_id}`;
+}
+
 type Variant = {
   id: number;
   name: string;
@@ -192,6 +205,7 @@ export default function AbPage({ params }: { params: Promise<{ id: string }> }) 
         <ExperimentCard
           key={experiment.id}
           experiment={experiment}
+          versions={versions.data}
           onAction={(action) => act.mutate({ id: experiment.id, action })}
           onPromote={(variantId) => promote.mutate({ id: experiment.id, variantId })}
           error={(act.error ?? promote.error) as Error | null}
@@ -203,11 +217,13 @@ export default function AbPage({ params }: { params: Promise<{ id: string }> }) 
 
 function ExperimentCard({
   experiment,
+  versions,
   onAction,
   onPromote,
   error,
 }: {
   experiment: Experiment;
+  versions: PipelineVersion[] | undefined;
   onAction: (action: string) => void;
   onPromote: (variantId: number) => void;
   error: Error | null;
@@ -266,7 +282,13 @@ function ExperimentCard({
               <tr key={row.variant_id}>
                 <td className="py-2">
                   <div className="text-slate-900">{row.name}</div>
-                  {row.is_control && <div className="text-[10px] text-slate-500">control</div>}
+                  {/* Which graph this arm runs. Two arms on one graph give two
+                      columns of the same numbers, and nothing on the row said
+                      what either of them was running. */}
+                  <div className="text-[10px] text-slate-500">
+                    {row.is_control && "control · "}
+                    {armGraph(experiment, versions, row.variant_id)}
+                  </div>
                 </td>
                 <td className="py-2 text-right tabular-nums">{row.traffic_percent}%</td>
                 <td className="py-2 text-right tabular-nums">

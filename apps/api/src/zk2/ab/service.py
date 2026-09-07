@@ -110,10 +110,60 @@ async def start(db: AsyncSession, experiment: AbExperiment) -> AbExperiment:
         raise ValidationError(
             f"Experiment {other.id} is already running for this bot; stop it first"
         )
+
+    await _pin_control(db, experiment, list(variants))
     experiment.status = "running"
     experiment.started_at = datetime.now(UTC)
     await db.flush()
     return experiment
+
+
+async def _pin_control(
+    db: AsyncSession, experiment: AbExperiment, variants: list[AbVariant]
+) -> None:
+    """Fix what the control arm runs, and refuse an experiment with one arm.
+
+    A control variant carries no version: it means "whatever the bot serves".
+    That is a moving target - promoting a version, or restoring one in the
+    editor, changes what control is measuring halfway through, and nothing
+    says so. Worse, it can quietly become the candidate's own graph, and then
+    the experiment produces two columns of the same numbers and a conclusion
+    drawn from them.
+
+    So the graph is resolved once, here, and both arms are compared before a
+    single visitor is assigned.
+    """
+    control = next((v for v in variants if v.is_control), None)
+    if control is None:
+        return
+    if control.pipeline_version_id is None:
+        control.pipeline_version_id = await _bot_version_id(db, bot_id=experiment.bot_id)
+
+    duplicate = next(
+        (
+            v
+            for v in variants
+            if not v.is_control and v.pipeline_version_id == control.pipeline_version_id
+        ),
+        None,
+    )
+    if duplicate is not None:
+        raise ValidationError(
+            f"Variant {duplicate.name!r} runs the same graph as the control; "
+            "an experiment needs two different graphs to compare"
+        )
+
+
+async def _bot_version_id(db: AsyncSession, *, bot_id: int) -> int | None:
+    """The pipeline version a bot serves, or None when it runs the built-in default."""
+    from zk2.bots.models import Bot  # noqa: PLC0415  (cycle: bots -> ab)
+    from zk2.pipelines.models import Pipeline  # noqa: PLC0415
+
+    bot = await db.scalar(select(Bot).where(Bot.id == bot_id))
+    if bot is None or bot.pipeline_id is None:
+        return None
+    pipeline = await db.scalar(select(Pipeline).where(Pipeline.id == bot.pipeline_id))
+    return pipeline.current_version_id if pipeline is not None else None
 
 
 async def stop(db: AsyncSession, experiment: AbExperiment) -> AbExperiment:

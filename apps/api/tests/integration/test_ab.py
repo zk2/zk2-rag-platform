@@ -14,6 +14,7 @@ from tests.integration.test_rag_stream import FakeLLM
 from zk2.ab.models import AbAssignment, AbExperiment
 from zk2.ab.service import assign, running_experiment
 from zk2.chat.rag import stream_rag
+from zk2.pipelines.models import PipelineVersion
 
 pytestmark = pytest.mark.integration
 
@@ -267,3 +268,51 @@ async def test_no_experiment_means_no_variant_in_the_turn(
         events.append(event)
     done = next(e for e in events if e.kind == "done")
     assert done.payload["variant"] is None
+
+
+async def test_starting_pins_what_the_control_runs(
+    owner_client: AsyncClient, db: AsyncSession
+) -> None:
+    """Control means "whatever the bot serves", and that moves under it.
+
+    Promoting a version, or restoring one in the editor, changes what the
+    control arm is measuring halfway through an experiment, and nothing says
+    so. The graph is resolved once, when the experiment starts.
+    """
+    bot_id, version_id = await _bot_and_variant_version(owner_client)
+    pipeline_id = await db.scalar(
+        select(PipelineVersion.pipeline_id).where(PipelineVersion.id == version_id)
+    )
+    await owner_client.patch(f"/bots/{bot_id}", json={"pipeline_id": pipeline_id})
+
+    # A second version, so the bot's pipeline has somewhere to move to
+    other = await owner_client.put(
+        f"/pipelines/{pipeline_id}/dag",
+        json={"dag": LEXICAL_DAG, "label": "second"},
+    )
+    other_id = int(other.json()["id"])
+
+    experiment = await _create_experiment(owner_client, bot_id, version_id)
+    started = await owner_client.post(f"/experiments/{experiment['id']}/start")
+    assert started.status_code == 200, started.text
+
+    control = next(v for v in started.json()["variants"] if v["is_control"])
+    assert control["pipeline_version_id"] == other_id, "control kept the graph it started with"
+
+
+async def test_an_experiment_needs_two_different_graphs(
+    owner_client: AsyncClient, db: AsyncSession
+) -> None:
+    """Both arms on one graph produce two columns of the same numbers."""
+    bot_id, version_id = await _bot_and_variant_version(owner_client)
+    pipeline_id = await db.scalar(
+        select(PipelineVersion.pipeline_id).where(PipelineVersion.id == version_id)
+    )
+    await owner_client.patch(f"/bots/{bot_id}", json={"pipeline_id": pipeline_id})
+
+    # The candidate is the very version the bot is already serving
+    experiment = await _create_experiment(owner_client, bot_id, version_id)
+    started = await owner_client.post(f"/experiments/{experiment['id']}/start")
+
+    assert started.status_code == 422, started.text
+    assert "same graph as the control" in started.json()["error"]["message"]
