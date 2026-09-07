@@ -259,3 +259,44 @@ async def _user(db: AsyncSession, org_owner: dict[str, Any]) -> Any:
     from zk2.auth.models import User
 
     return await db.scalar(select(User).where(User.id == org_owner["user_id"]))
+
+
+async def test_a_run_can_be_pinned_to_a_pipeline_version(
+    owner_client: AsyncClient, db: AsyncSession, org_owner: dict[str, Any]
+) -> None:
+    """Comparing two graphs means running both against the same questions.
+
+    Without a pinned version the only way to measure a change was to make it
+    the bot's current pipeline first, which changes what everyone else is
+    talking to while the measurement runs.
+    """
+    dataset_id = await _dataset_with_items(owner_client)
+    bot_id = await _bot_with_source(owner_client, db)
+
+    pipeline = (await owner_client.post("/pipelines", json={"name": "Lexical only"})).json()
+    lean = {
+        "nodes": [
+            {"id": "bm25", "type": "retriever_bm25", "config": {"k": 5}},
+            {"id": "context", "type": "context_builder", "config": {}},
+            {"id": "answer", "type": "generate", "config": {}},
+        ],
+        "edges": [["bm25", "context"], ["context", "answer"]],
+    }
+    version = (
+        await owner_client.put(f"/pipelines/{pipeline['id']}/dag", json={"dag": lean})
+    ).json()
+
+    started = await owner_client.post(
+        f"/evals/datasets/{dataset_id}/runs",
+        json={
+            "bot_id": bot_id,
+            "pipeline_version_id": version["id"],
+            "metrics": ["citation_rate"],
+        },
+    )
+    assert started.status_code == 201, started.text
+    assert started.json()["pipeline_version_id"] == version["id"]
+
+    run = await db.get(EvalRun, started.json()["id"])
+    assert run is not None
+    assert run.pipeline_version_id == version["id"]

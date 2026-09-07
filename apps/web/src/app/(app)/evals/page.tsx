@@ -24,6 +24,7 @@ type Run = {
   cost_usd: string | null;
   duration_ms: number | null;
   is_baseline: boolean;
+  pipeline_version_id: number | null;
   created_at: string;
 };
 type Comparison = {
@@ -34,6 +35,8 @@ type Comparison = {
   threshold: number;
 };
 type Bot = { id: number; name: string };
+type Pipeline = { id: number; name: string };
+type PipelineVersion = { id: number; label: string | null; is_current: boolean };
 
 export default function EvalsPage() {
   const [selected, setSelected] = useState<number | null>(null);
@@ -175,6 +178,52 @@ function Datasets({
   );
 }
 
+/**
+ * Which graph the run executes. Left alone it follows the bot, which is what a
+ * chat turn does; pinned to a version it runs that graph instead, so two
+ * versions can be measured on the same questions with the same bot.
+ */
+function PipelineVersionSelect({
+  pipelines,
+  value,
+  onChange,
+}: {
+  pipelines: Pipeline[];
+  value: number | null;
+  onChange: (id: number | null) => void;
+}) {
+  const versions = useQuery({
+    queryKey: ["pipeline-versions", pipelines.map((p) => p.id)],
+    enabled: pipelines.length > 0,
+    queryFn: async () => {
+      const lists = await Promise.all(
+        pipelines.map(async (pipeline) => {
+          const rows = await api.get<PipelineVersion[]>(`/pipelines/${pipeline.id}/versions`);
+          return rows.map((version) => ({ pipeline, version }));
+        }),
+      );
+      return lists.flat();
+    },
+  });
+
+  return (
+    <select
+      id="run-version"
+      value={value ?? ""}
+      onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
+      className="w-full h-9 rounded border border-slate-300 px-2 text-sm bg-white"
+    >
+      <option value="">The bot&apos;s own pipeline</option>
+      {versions.data?.map(({ pipeline, version }) => (
+        <option key={version.id} value={version.id}>
+          {pipeline.name} - {version.label ?? `v${version.id}`}
+          {version.is_current ? " (current)" : ""}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 function Runs({ datasetId }: { datasetId: number }) {
   const qc = useQueryClient();
   const runs = useQuery({
@@ -184,12 +233,19 @@ function Runs({ datasetId }: { datasetId: number }) {
       q.state.data?.some((r) => r.status === "pending" || r.status === "running") ? 3000 : false,
   });
   const bots = useQuery({ queryKey: ["bots"], queryFn: () => api.get<Bot[]>("/bots") });
+  const pipelines = useQuery({
+    queryKey: ["pipelines"],
+    queryFn: () => api.get<Pipeline[]>("/pipelines"),
+  });
   const metrics = useQuery({
     queryKey: ["eval-metrics"],
     queryFn: () => api.get<Metric[]>("/evals/metrics"),
   });
 
   const [botId, setBotId] = useState<number | null>(null);
+  // Pinning a version is how two graphs are compared on one dataset: same
+  // questions, same bot, one node different.
+  const [versionId, setVersionId] = useState<number | null>(null);
   const [chosen, setChosen] = useState<string[]>([]);
   const [baseline, setBaseline] = useState(false);
   const [compareWith, setCompareWith] = useState<[number, number] | null>(null);
@@ -198,6 +254,7 @@ function Runs({ datasetId }: { datasetId: number }) {
     mutationFn: () =>
       api.post<Run>(`/evals/datasets/${datasetId}/runs`, {
         bot_id: botId ?? bots.data?.[0]?.id,
+        pipeline_version_id: versionId,
         metrics: chosen.length ? chosen : metrics.data?.filter((m) => !m.needs_judge).map((m) => m.name),
         mark_baseline: baseline,
       }),
@@ -237,6 +294,14 @@ function Runs({ datasetId }: { datasetId: number }) {
               </select>
             </div>
             <div>
+              <Label htmlFor="run-version">Pipeline version</Label>
+              <PipelineVersionSelect
+                pipelines={pipelines.data ?? []}
+                value={versionId}
+                onChange={setVersionId}
+              />
+            </div>
+            <div className="md:col-span-2">
               <Label>Metrics</Label>
               <div className="flex flex-wrap gap-2 mt-1">
                 {metrics.data?.map((metric) => {
@@ -305,6 +370,10 @@ function Runs({ datasetId }: { datasetId: number }) {
                       {run.status === "running" && ` · ${run.items_done}/${run.items_total}`}
                       {run.duration_ms !== null && ` · ${(run.duration_ms / 1000).toFixed(1)}s`}
                       {run.cost_usd && ` · $${run.cost_usd}`}
+                      {/* Two runs that differ only by graph are otherwise
+                          indistinguishable in this list */}
+                      {run.pipeline_version_id !== null &&
+                        ` · pipeline v${run.pipeline_version_id}`}
                     </div>
                     {run.error && <div className="text-xs text-red-600">{run.error}</div>}
                   </div>
