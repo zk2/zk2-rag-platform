@@ -51,6 +51,15 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
   // uses, and this page makes no REST calls to keep it fresh. One retry is
   // enough to tell a stale token from a session that is really over.
   const retriedAuth = useRef(false);
+  // A socket outlives its token: the server re-checks on every turn and closes
+  // the connection when the token has expired. The question that was refused is
+  // kept here and sent again once the refreshed token has reconnected -
+  // otherwise it sits in the transcript with no answer and no explanation.
+  const unsent = useRef<string | null>(null);
+  const lastAsked = useRef<string | null>(null);
+  // Read inside the socket handler, which closes over the state it was created
+  // with; a ref is the conversation id as it is now rather than as it was.
+  const conversationIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!accessToken || !currentOrgId) return;
@@ -67,13 +76,27 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
     ws.onmessage = (ev) => {
       const data = JSON.parse(ev.data);
       switch (data.type) {
-        case "ready":
+        case "ready": {
           ready = true;
           retriedAuth.current = false;
           setConnected(true);
           setError(null);
+          const pending = unsent.current;
+          unsent.current = null;
+          if (pending) {
+            ws.send(
+              JSON.stringify({
+                type: "user_message",
+                content: pending,
+                conversation_id: conversationIdRef.current,
+              }),
+            );
+            setStreaming(true);
+          }
           break;
+        }
         case "conversation":
+          conversationIdRef.current = data.id;
           setConversationId(data.id);
           break;
         case "sources":
@@ -162,6 +185,19 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
           break;
         case "error":
           setStreaming(false);
+          if (data.code === "token_expired") {
+            // Not an error the reader can do anything about: the session is
+            // fine, the token simply aged out mid-conversation.
+            setError(null);
+            unsent.current = lastAsked.current;
+            void refreshSession().then(({ token, over }) => {
+              if (!token && over) {
+                unsent.current = null;
+                setError("Session expired. Sign in again.");
+              }
+            });
+            break;
+          }
           setError(data.message);
           break;
       }
@@ -203,6 +239,7 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN || !input.trim()) return;
     setError(null);
+    lastAsked.current = input;
     setMessages((m) => [...m, { role: "user", content: input }]);
     ws.send(
       JSON.stringify({
