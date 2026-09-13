@@ -38,12 +38,20 @@
     </profiles>
 
     <!-- Kept, but with a TTL, which neither ships with. part_log is the table
-         that showed the merges described above, and both are small. -->
+         that showed the merges described above, and both are small.
+
+         <ttl>, not a full <engine> expression as the Langfuse docs show. The
+         stock config.xml already sets <partition_by> for these tables, and
+         ClickHouse refuses to start when a table has both: exit code 36,
+         BAD_ARGUMENTS, "If 'engine' is specified for system table, PARTITION
+         BY parameters should be specified directly inside 'engine'"
+         (src/Interpreters/SystemLog.cpp). Hit on the first deploy of this
+         file. -->
     <query_log>
-        <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) TTL event_date + INTERVAL 30 DAY</engine>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
     </query_log>
     <part_log>
-        <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) TTL event_date + INTERVAL 30 DAY</engine>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
     </part_log>
 
     <!-- 6 GiB. A ceiling ClickHouse enforces on itself: past it a query or a
