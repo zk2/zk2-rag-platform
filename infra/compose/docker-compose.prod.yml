@@ -241,6 +241,9 @@ services:
     volumes:
       - langfuse_clickhouse_data:/var/lib/clickhouse
       - langfuse_clickhouse_logs:/var/log/clickhouse-server
+      # System log tables and a memory ceiling. The file explains both: without
+      # it, merges of system.metric_log alone took over 6 GiB each.
+      - ./clickhouse-config.xml:/etc/clickhouse-server/config.d/zk2.xml:ro,z
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1"]
       interval: 5s
