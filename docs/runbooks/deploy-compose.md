@@ -188,8 +188,8 @@ the machine, not of the container, so it never stopped itself. Set
 
 The config only stops writing. Tables already on disk stay, and the first start
 with it may also keep the old `query_log` and `part_log` under a numeric suffix,
-because their engine changed. List what is there, then drop what the config
-removed:
+because their definition gained a TTL. List what is there, then drop what the
+config removed:
 
 ```bash
 docker compose --env-file .env.prod -f infra/compose/docker-compose.prod.yml --profile obs \
