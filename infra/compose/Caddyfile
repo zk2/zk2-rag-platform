@@ -31,6 +31,12 @@
 	}
 
 	reverse_proxy langfuse-web:3000
+
+	# Switched off in Admin -> Services, the container is gone and its name no
+	# longer resolves. A bare 502 would read as an outage; this says what it is.
+	handle_errors 502 503 {
+		respond "Langfuse is switched off. A super-admin can switch it on in the admin panel, under Services." 503
+	}
 }
 
 :80 {
@@ -44,6 +50,12 @@
 	# /metrics is a Prometheus scrape target, and Prometheus reaches the API
 	# directly inside this network. Nothing outside has any business there.
 	handle /api/metrics {
+		respond "Not found" 404
+	}
+
+	# The host agent reports here, over the compose network. It is token-checked,
+	# but nobody outside is ever the agent, so from outside it does not exist.
+	handle /api/ops/agent/* {
 		respond "Not found" 404
 	}
 

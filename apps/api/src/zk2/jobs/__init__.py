@@ -22,6 +22,7 @@ from zk2.core.db import db_session, dispose_engine
 from zk2.core.logging import configure_logging
 from zk2.core.tracing import flush_traces
 from zk2.evals.runner import RunSettings, execute_run
+from zk2.ops.service import follow_langfuse_switch
 from zk2.retrieval.rerank import warm_up as rerank_warm_up
 from zk2.sources.ingest import ingest_source as _ingest_source
 
@@ -62,16 +63,21 @@ async def check_mcp_servers(_: dict[str, Any]) -> None:
     logger.info("arq.mcp_checked", servers=len(servers))
 
 
-async def on_startup(_: dict[str, Any]) -> None:
+async def on_startup(ctx: dict[str, Any]) -> None:
     configure_logging()
     # The worker reranks too, inside eval runs, and a run of a hundred
     # questions must not begin by loading a model a hundred times' worth of
     # waiting into the first one.
     asyncio.create_task(rerank_warm_up())  # noqa: RUF006  (fire and forget by design)
+    # Eval runs trace into Langfuse as well, so the worker obeys the switch too
+    ctx["langfuse_switch"] = asyncio.create_task(follow_langfuse_switch())
     logger.info("arq.worker.start")
 
 
-async def on_shutdown(_: dict[str, Any]) -> None:
+async def on_shutdown(ctx: dict[str, Any]) -> None:
+    langfuse_switch = ctx.get("langfuse_switch")
+    if langfuse_switch is not None:
+        langfuse_switch.cancel()
     await flush_traces()
     await dispose_engine()
     logger.info("arq.worker.stop")

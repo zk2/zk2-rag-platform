@@ -137,6 +137,7 @@ async def test_links_describe_the_deployment(
         "grafana_url",
         "jaeger_url",
         "langfuse_url",
+        "langfuse_switched_off",
         "prometheus_url",
         "sentry_enabled",
         "tracing_enabled",
@@ -144,6 +145,8 @@ async def test_links_describe_the_deployment(
     # Tests run without an OTLP endpoint or Sentry DSN
     assert body["tracing_enabled"] is False
     assert body["sentry_enabled"] is False
+    # Nobody has switched it off in Admin -> Services
+    assert body["langfuse_switched_off"] is False
 
 
 async def test_links_are_not_a_tenant_facing_endpoint(owner_client: AsyncClient) -> None:

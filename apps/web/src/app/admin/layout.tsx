@@ -37,6 +37,9 @@ export default function AdminLayout({
           <Link href="/admin/invites" className="text-slate-700 hover:text-slate-900">
             Invites
           </Link>
+          <Link href="/admin/services" className="text-slate-700 hover:text-slate-900">
+            Services
+          </Link>
           {/* Signing in as a super-admin lands here, and the admin pages are
               only about who gets in - the documents, bots and pipelines live in
               the workspace. Without this the trip is one-way. */}

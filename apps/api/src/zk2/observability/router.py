@@ -152,6 +152,7 @@ async def key_allowance(
 @router.get("/observability/links", response_model=ObservabilityLinks)
 async def observability_links(
     _user: Annotated[User, Depends(require_super_admin())],
+    db: Annotated[AsyncSession, Depends(get_db_dep)],
 ) -> ObservabilityLinks:
     """Where traces, dashboards and errors live for this deployment.
 
@@ -162,7 +163,10 @@ async def observability_links(
     addresses would describe the deployment's insides to someone who cannot use
     any of them.
     """
+    from zk2.ops.service import LANGFUSE, load_services  # noqa: PLC0415
+
     settings = get_settings().observability
+    services = await load_services(db)
     return ObservabilityLinks(
         grafana_url=settings.grafana_url,
         jaeger_url=settings.jaeger_url,
@@ -171,6 +175,9 @@ async def observability_links(
         langfuse_url=(settings.langfuse_public_url or settings.langfuse_host)
         if settings.langfuse_public_key
         else None,
+        langfuse_switched_off=any(
+            s.name == LANGFUSE and s.desired_state == "off" for s in services
+        ),
         prometheus_url=settings.prometheus_url,
         sentry_enabled=bool(settings.sentry_dsn),
         tracing_enabled=bool(settings.otel_endpoint),

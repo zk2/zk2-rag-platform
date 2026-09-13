@@ -174,7 +174,54 @@ that does not exist. `Traces: No results` is the only symptom.
 To run without any of it: `make prod-up PROD_PROFILES=`, and empty
 `OTEL_EXPORTER_OTLP_ENDPOINT` and `LANGFUSE_HOST` in `.env.prod` - pointed at
 containers that are not running, the api retries every export forever and
-fills the log with it.
+fills the log with it. For Langfuse alone there is a switch, below.
+
+### Switching Langfuse on and off
+
+Langfuse is the heavy part. Its six containers held about 2.1 GB between them
+on this host - `langfuse-web` and `langfuse-worker` more than ClickHouse - twice
+what the application itself used, and it is only worth that while somebody is
+reading traces. So it has a compose profile of its own, `langfuse`, and a
+switch in the admin panel under **Services**.
+
+The API does not start or stop anything: Docker access is root on the host, and
+the API is the process facing the internet. It records the switch. An agent on
+the host, `scripts/ops-agent.py`, reports every few seconds what is running,
+gets the switch back in the same call, and runs `docker compose up -d` or `stop`
+for the Langfuse services. It reaches the API through `docker compose exec api`,
+so nothing is published for it, and Caddy answers 404 for `/api/ops/agent/*`.
+
+Setting it up, once:
+
+```bash
+# in .env.prod
+OPS_AGENT_TOKEN=...          # python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+
+make prod-up                 # the api and worker pick up the token
+make prod-agent-install      # systemd unit for this user and this checkout
+make prod-agent-logs
+```
+
+The unit runs as the user who installed it, which needs Docker access, from
+this checkout. `make prod-deploy` restarts it, so a pulled change to the script
+takes effect.
+
+What to know about the switch:
+
+- While it is off, nothing is recorded. The api and the worker stop exporting
+  within 15 seconds, and turns answered in that time never reach Langfuse, even
+  once it is back. Traces recorded earlier stay in the volumes.
+- Switching on asks for how long, 4 hours unless you pick otherwise. When the
+  time runs out the switch flips back by itself.
+- `make prod-up` and `make prod-deploy` leave Langfuse as they find it: running
+  containers are brought up to date, stopped ones stay stopped.
+- With `LANGFUSE_HOSTNAME` set, the public address answers 503 with a line
+  saying Langfuse is switched off, rather than a bare 502.
+- The page says `no agent` when nothing has reported for a minute. The switch
+  still records the choice; nothing happens on the host until the agent runs.
+- Every flip is in `audit_log`: `ops.service_switched_on` and
+  `ops.service_switched_off` with who and from where, `ops.service_auto_off`
+  when the time ran out.
 
 ### ClickHouse memory and its own logs
 
@@ -192,7 +239,7 @@ is tied to the file's inode, while `git pull` writes a new file under the same
 name. The container goes on reading the old content, restart after restart:
 
 ```bash
-docker compose --env-file .env.prod -f infra/compose/docker-compose.prod.yml --profile obs \
+docker compose --env-file .env.prod -f infra/compose/docker-compose.prod.yml --profile langfuse \
   up -d --force-recreate langfuse-clickhouse
 ```
 
@@ -202,7 +249,7 @@ because their definition gained a TTL. List what is there, then drop what the
 config removed:
 
 ```bash
-docker compose --env-file .env.prod -f infra/compose/docker-compose.prod.yml --profile obs \
+docker compose --env-file .env.prod -f infra/compose/docker-compose.prod.yml --profile langfuse \
   exec -T langfuse-clickhouse sh -c 'clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --multiquery' <<'SQL'
 SELECT name, formatReadableSize(total_bytes) AS size FROM system.tables WHERE database = 'system' AND name LIKE '%log%' ORDER BY name;
 SQL
@@ -284,3 +331,4 @@ a lost queue costs a re-index.
 | Chat connects then closes immediately | The proxy in front is not forwarding the WebSocket upgrade for `/api/ws/*` |
 | Invites never arrive | `EMAIL_PASSWORD` empty, or the sending domain's DNS is not verified at the provider |
 | Langfuse shows no traces | The SDK major must match the server major. Check `docker compose ... logs api | grep langfuse`: a `ValidationError` from `auth_check` or `Failed to export span batch code: 404` both mean the versions disagree |
+| Services switch flips, Langfuse stays as it was | `make prod-agent-logs`: the agent logs the compose error, and the Services page shows its last line. `no agent` there means the unit is not running or `OPS_AGENT_TOKEN` is empty |

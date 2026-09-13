@@ -167,12 +167,18 @@ tf-validate: ## Validate the Terraform example
 # The whole stack on one machine: postgres, redis, api, worker, web and the
 # Caddy that fronts them. Observability rides along in the `obs` profile -
 # drop it with `make prod-up PROD_PROFILES=`.
+#
+# Langfuse is not in it. It has a profile of its own and is switched on and off
+# in Admin -> Services, by the agent `make prod-agent-install` sets up; these
+# targets name that profile only where they must not skip it.
 PROD_PROFILES ?= --profile obs
 PROD_COMPOSE := docker compose --env-file .env.prod -f infra/compose/docker-compose.prod.yml $(PROD_PROFILES)
+LANGFUSE_COMPOSE := docker compose --env-file .env.prod -f infra/compose/docker-compose.prod.yml --profile langfuse
+SUDO := $(if $(filter 0,$(shell id -u)),,sudo)
 
 .PHONY: prod-config
 prod-config: ## Validate the production compose file and its variables
-	$(PROD_COMPOSE) config -q && echo "compose config is valid"
+	$(PROD_COMPOSE) --profile langfuse config -q && echo "compose config is valid"
 
 .PHONY: prod-build
 prod-build: ## Build the api and web images on this host
@@ -181,18 +187,24 @@ prod-build: ## Build the api and web images on this host
 .PHONY: prod-up
 prod-up: ## Start the production stack (migrations run first)
 	$(PROD_COMPOSE) up -d
+	@# Langfuse comes along only when it is running already: a deploy then
+	@# picks up its changes without starting what somebody switched off.
+	@if [ -n "$$($(LANGFUSE_COMPOSE) ps -q --status running langfuse-web)" ]; then \
+		echo "Langfuse is switched on, bringing it up to date"; \
+		$(LANGFUSE_COMPOSE) up -d; \
+	fi
 
 .PHONY: prod-down
 prod-down: ## Stop the production stack, keeping volumes
-	$(PROD_COMPOSE) down
+	$(PROD_COMPOSE) --profile langfuse down
 
 .PHONY: prod-ps
 prod-ps: ## Show what is running
-	$(PROD_COMPOSE) ps
+	$(PROD_COMPOSE) --profile langfuse ps
 
 .PHONY: prod-logs
 prod-logs: ## Follow logs (make prod-logs SERVICE=api for one service)
-	$(PROD_COMPOSE) logs -f --tail=200 $(SERVICE)
+	$(PROD_COMPOSE) --profile langfuse logs -f --tail=200 $(SERVICE)
 
 .PHONY: prod-migrate
 prod-migrate: ## Apply migrations without restarting anything
@@ -208,7 +220,27 @@ prod-seed-demo: ## Add demo documents, a bot, a pipeline and a golden set
 
 .PHONY: prod-deploy
 prod-deploy: prod-build prod-up ## Rebuild the images and roll the stack over
-	$(PROD_COMPOSE) ps
+	@# The agent reads its script once, at start: a pull that changed it would
+	@# otherwise go on running the old one
+	@if systemctl is-active --quiet zk2-ops-agent 2>/dev/null; then \
+		$(SUDO) systemctl restart zk2-ops-agent; \
+	fi
+	$(PROD_COMPOSE) --profile langfuse ps
+
+.PHONY: prod-agent-install
+prod-agent-install: ## Install the host agent that applies Admin -> Services switches
+	@grep -q '^OPS_AGENT_TOKEN=.' .env.prod || { \
+		echo "OPS_AGENT_TOKEN is empty in .env.prod: set it, then make prod-up, then run this again"; \
+		exit 1; }
+	sed -e 's|@USER@|$(shell id -un)|g' -e 's|@REPO@|$(CURDIR)|g' infra/systemd/zk2-ops-agent.service \
+		| $(SUDO) tee /etc/systemd/system/zk2-ops-agent.service > /dev/null
+	$(SUDO) systemctl daemon-reload
+	$(SUDO) systemctl enable --now zk2-ops-agent
+	@echo "zk2-ops-agent is running; make prod-agent-logs to watch it"
+
+.PHONY: prod-agent-logs
+prod-agent-logs: ## Follow the host agent's log
+	journalctl -u zk2-ops-agent -f -n 100
 
 .PHONY: prod-clean
 prod-clean: ## Reclaim disk: build cache and untagged images
