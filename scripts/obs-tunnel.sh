@@ -12,7 +12,7 @@
 # a user is the intended way to say where and as whom.
 set -euo pipefail
 
-HOST="${ZK2_OBS_HOST:-zk-demo}"
+HOST="${ZK2_OBS_HOST:-reldava-demo}"
 SOCKET="${ZK2_OBS_SOCKET:-${TMPDIR:-/tmp}/zk2-obs-tunnel-$(id -u)}"
 
 # Local port, remote port, name. Same number on both ends keeps the links in
@@ -99,7 +99,7 @@ case "${1:-}" in
     status) status ;;
     *)
         printf "usage: %s up|down|status\n\n" "$0"
-        printf "  ZK2_OBS_HOST    ssh destination (default: zk-demo)\n"
+        printf "  ZK2_OBS_HOST    ssh destination (default: reldava-demo)\n"
         printf "  ZK2_OBS_SOCKET  control socket path\n"
         exit 2
         ;;

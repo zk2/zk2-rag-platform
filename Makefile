@@ -223,7 +223,7 @@ prod-clean: ## Reclaim disk: build cache and untagged images
 ## ── Observability tunnels ────────────────────────────────────
 
 # Grafana, Jaeger and Prometheus are loopback-bound on the deployment host.
-# Set ZK2_OBS_HOST, or name the host `zk-demo` in ~/.ssh/config.
+# Set ZK2_OBS_HOST, or name the host `reldava-demo` in ~/.ssh/config.
 
 .PHONY: obs-up
 obs-up: ## Open the SSH tunnels to Grafana, Jaeger, Prometheus and Langfuse

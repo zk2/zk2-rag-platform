@@ -142,7 +142,7 @@ Prometheus on 9090, Langfuse on 3030. The script keeps one multiplexed
 connection behind a control socket, which is what lets `down` close exactly
 what `up` opened rather than every ssh you happen to be running.
 
-It talks to the host named `zk-demo`, so put the address, the user and the key
+It talks to the host named `reldava-demo`, so put the address, the user and the key
 in `~/.ssh/config` under that name, or point `ZK2_OBS_HOST` at another entry:
 
 ```bash
