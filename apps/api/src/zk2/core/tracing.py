@@ -26,6 +26,23 @@ logger = structlog.get_logger()
 
 _TRACER_NAME = "zk2.rag"
 
+# Flipped by the Langfuse switch in the admin panel (zk2.ops). While it is off
+# the containers are stopped: a client exporting into them would retry and fill
+# the log, and hand out links to traces that will never exist.
+_langfuse_switched_off = False
+
+
+def set_langfuse_switched_off(switched_off: bool) -> None:
+    global _langfuse_switched_off  # noqa: PLW0603  (one flag per process, by design)
+    if switched_off != _langfuse_switched_off:
+        logger.info("tracing.langfuse_switched", on=not switched_off)
+    _langfuse_switched_off = switched_off
+
+
+def langfuse_configured() -> bool:
+    settings = get_settings().observability
+    return bool(settings.langfuse_public_key and settings.langfuse_secret_key)
+
 
 @lru_cache(maxsize=1)
 def get_langfuse() -> Any | None:
@@ -147,7 +164,7 @@ def start_turn(
         if isinstance(value, str | int | float | bool):
             otel_span.set_attribute(f"zk2.{key}", value)
 
-    client = get_langfuse()
+    client = None if _langfuse_switched_off else get_langfuse()
     observation = None
     trace_id = None
     trace_url = None
@@ -171,7 +188,7 @@ def start_turn(
 
 async def flush_traces() -> None:
     """Send anything buffered. Called on shutdown; safe when disabled."""
-    client = get_langfuse()
+    client = None if _langfuse_switched_off else get_langfuse()
     if client is None:
         return
     try:

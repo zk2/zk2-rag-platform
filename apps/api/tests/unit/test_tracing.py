@@ -165,6 +165,25 @@ async def test_flush_reaches_the_client(fake_client: FakeLangfuse) -> None:
     assert fake_client.flushed is True
 
 
+async def test_a_switched_off_langfuse_is_left_alone(
+    fake_client: FakeLangfuse, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Switched off in the admin panel, its containers are stopped.
+
+    Exporting into them would only retry and fill the log, and the chat would
+    link to traces that never come into existence.
+    """
+    monkeypatch.setattr(tracing, "_langfuse_switched_off", True)
+    turn = start_turn("rag.turn", input_data="How many vacation days?")
+    turn.step("answer").end(output="twenty")
+    turn.end()
+    await flush_traces()
+
+    assert fake_client.observations == []
+    assert turn.trace_url is None
+    assert fake_client.flushed is False
+
+
 def test_the_sampler_keeps_a_request_and_drops_the_plumbing() -> None:
     """A trace should describe something somebody asked for.
 

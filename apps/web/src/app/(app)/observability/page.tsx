@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,6 +31,7 @@ type Links = {
   grafana_url: string | null;
   jaeger_url: string | null;
   langfuse_url: string | null;
+  langfuse_switched_off: boolean;
   prometheus_url: string | null;
   sentry_enabled: boolean;
   tracing_enabled: boolean;
@@ -247,10 +249,15 @@ function needsTunnel(url: string): boolean {
 function ToolLinks({ links }: { links?: Links }) {
   if (!links) return null;
   const entries = [
-    { label: "Grafana dashboards", url: links.grafana_url, icon: BarChart3 },
-    { label: "Jaeger traces", url: links.jaeger_url, icon: Radar },
-    { label: "Langfuse (LLM traces)", url: links.langfuse_url, icon: ScrollText },
-    { label: "Prometheus", url: links.prometheus_url, icon: Activity },
+    { label: "Grafana dashboards", url: links.grafana_url, icon: BarChart3, off: false },
+    { label: "Jaeger traces", url: links.jaeger_url, icon: Radar, off: false },
+    {
+      label: "Langfuse (LLM traces)",
+      url: links.langfuse_url,
+      icon: ScrollText,
+      off: links.langfuse_switched_off,
+    },
+    { label: "Prometheus", url: links.prometheus_url, icon: Activity, off: false },
   ];
   return (
     <Card>
@@ -258,7 +265,7 @@ function ToolLinks({ links }: { links?: Links }) {
         <CardTitle>Tooling</CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
-        {entries.map(({ label, url, icon: Icon }) => (
+        {entries.map(({ label, url, icon: Icon, off }) => (
           <div key={label} className="flex items-center gap-2 text-sm">
             <Icon className="size-4 text-slate-400" />
             {url ? (
@@ -271,10 +278,19 @@ function ToolLinks({ links }: { links?: Links }) {
                 >
                   {label} <ExternalLink className="size-3" />
                 </a>
-                {needsTunnel(url) && (
-                  <span className="text-xs text-slate-400">
-                    server-local, needs an SSH tunnel
+                {off ? (
+                  <span className="text-xs text-amber-700">
+                    switched off -{" "}
+                    <Link href="/admin/services" className="underline hover:text-amber-900">
+                      switch it on
+                    </Link>
                   </span>
+                ) : (
+                  needsTunnel(url) && (
+                    <span className="text-xs text-slate-400">
+                      server-local, needs an SSH tunnel
+                    </span>
+                  )
                 )}
               </>
             ) : (

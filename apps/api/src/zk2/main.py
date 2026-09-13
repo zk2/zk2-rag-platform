@@ -37,6 +37,9 @@ from zk2.health import router as health_router
 from zk2.llm.router import models_router
 from zk2.llm.router import router as providers_router
 from zk2.observability.router import router as observability_router
+from zk2.ops.router import admin_router as services_admin_router
+from zk2.ops.router import agent_router as ops_agent_router
+from zk2.ops.service import follow_langfuse_switch
 from zk2.orgs.router import router as org_settings_router
 from zk2.pipelines.router import router as pipelines_router
 from zk2.retrieval.rerank import warm_up as rerank_warm_up
@@ -52,10 +55,12 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
     # process must start answering health checks before it finishes. Whoever
     # asks the first question should not be the one paying for the load.
     warm = asyncio.create_task(rerank_warm_up())
+    langfuse_switch = asyncio.create_task(follow_langfuse_switch())
     try:
         yield
     finally:
         warm.cancel()
+        langfuse_switch.cancel()
         await flush_traces()
         await dispose_engine()
         await close_redis()
@@ -102,6 +107,8 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(access_router)
     app.include_router(admin_router)
+    app.include_router(services_admin_router)
+    app.include_router(ops_agent_router)
     app.include_router(providers_router)
     app.include_router(models_router)
     app.include_router(org_settings_router)

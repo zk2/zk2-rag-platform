@@ -1,0 +1,17 @@
+# Template: `make prod-agent-install` fills in @USER@ and @REPO@ and installs it
+# as /etc/systemd/system/zk2-ops-agent.service. The user needs Docker access -
+# the same user that runs `make prod-deploy`.
+[Unit]
+Description=zk2 ops agent - applies the service switches from the admin panel
+Wants=docker.service
+After=docker.service
+
+[Service]
+User=@USER@
+WorkingDirectory=@REPO@
+ExecStart=/usr/bin/python3 @REPO@/scripts/ops-agent.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

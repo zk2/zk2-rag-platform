@@ -166,6 +166,7 @@ services:
 
   # ── Observability (profile: obs) ────────────────────────────
   # `--profile obs` brings these up; without it the stack is application only.
+  # Langfuse is further down, under a profile of its own.
 
   prometheus:
     image: prom/prometheus:latest
@@ -206,13 +207,19 @@ services:
     ports:
       - "${OBS_BIND:-127.0.0.1}:16686:16686"
 
+  # ── Langfuse (profile: langfuse) ────────────────────────────
   # Langfuse v4. The Python SDK sends over OpenTelemetry to /api/public/otel,
   # which only exists from server v3 onwards - paired with the v2 image the app
   # authenticates happily and every trace disappears. That is four containers
   # of infrastructure for one feature, which is what the version buys.
+  #
+  # A profile of its own, not `obs`: together these hold about 2 GB of memory
+  # and are needed only while somebody reads traces. A super-admin switches them
+  # on and off in Admin -> Services, and scripts/ops-agent.py on the host starts
+  # and stops them. `make prod-up` leaves them as it finds them.
   langfuse-db:
     image: postgres:16-alpine
-    profiles: [obs]
+    profiles: [langfuse]
     restart: unless-stopped
     environment:
       POSTGRES_DB: langfuse
@@ -231,7 +238,7 @@ services:
 
   langfuse-clickhouse:
     image: clickhouse/clickhouse-server:25.12
-    profiles: [obs]
+    profiles: [langfuse]
     restart: unless-stopped
     user: "101:101"
     environment:
@@ -254,7 +261,7 @@ services:
   # writes here, over the compose network.
   langfuse-minio:
     image: minio/minio:latest
-    profiles: [obs]
+    profiles: [langfuse]
     restart: unless-stopped
     entrypoint: sh
     command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
@@ -278,7 +285,7 @@ services:
   # policy, let alone a keyspace.
   langfuse-redis:
     image: redis:7-alpine
-    profiles: [obs]
+    profiles: [langfuse]
     restart: unless-stopped
     command: ["redis-server", "--requirepass", "${LANGFUSE_REDIS_PASSWORD:?LANGFUSE_REDIS_PASSWORD is required}", "--maxmemory-policy", "noeviction"]
     volumes:
@@ -291,7 +298,7 @@ services:
 
   langfuse-worker:
     image: docker.langfuse.com/langfuse/langfuse-worker:4
-    profiles: [obs]
+    profiles: [langfuse]
     restart: unless-stopped
     environment: &langfuse-env
       DATABASE_URL: postgresql://langfuse:${LANGFUSE_DB_PASSWORD:?LANGFUSE_DB_PASSWORD is required}@langfuse-db:5432/langfuse
@@ -334,7 +341,7 @@ services:
 
   langfuse-web:
     image: docker.langfuse.com/langfuse/langfuse:4
-    profiles: [obs]
+    profiles: [langfuse]
     restart: unless-stopped
     environment:
       <<: *langfuse-env

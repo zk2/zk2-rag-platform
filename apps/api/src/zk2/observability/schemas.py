@@ -41,6 +41,8 @@ class ObservabilityLinks(BaseModel):
     grafana_url: str | None
     jaeger_url: str | None
     langfuse_url: str | None
+    # Switched off in Admin -> Services: the link is right and leads nowhere
+    langfuse_switched_off: bool
     prometheus_url: str | None
     sentry_enabled: bool
     tracing_enabled: bool

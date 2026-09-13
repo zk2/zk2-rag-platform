@@ -162,6 +162,15 @@ class ObservabilitySettings(_Base):
     prometheus_url: str | None = Field(None, alias="PROMETHEUS_URL")
 
 
+class OpsSettings(_Base):
+    """The agent on the host that applies the admin panel's service switches."""
+
+    # Unset, the agent endpoint answers 404 and the switches change nothing but
+    # a row. Generate like APP_SECRET_KEY; the agent reads it from the api
+    # container's environment, so it lives in .env.prod and nowhere else.
+    agent_token: SecretStr | None = Field(None, alias="OPS_AGENT_TOKEN")
+
+
 class IngestSettings(_Base):
     """Limits for user-supplied files and URLs."""
 
@@ -256,6 +265,7 @@ class Settings:
         self.mail = MailSettings()
         self.llm = LLMSettings()
         self.observability = ObservabilitySettings()
+        self.ops = OpsSettings()
         self.ingest = IngestSettings()
         self.retrieval = RetrievalSettings()
         self.tools = ToolSettings()

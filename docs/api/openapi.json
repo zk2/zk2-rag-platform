@@ -216,25 +216,9 @@
           "observability"
         ],
         "summary": "Observability Links",
-        "description": "Where traces, dashboards and errors live for this deployment.",
+        "description": "Where traces, dashboards and errors live for this deployment.\n\nOperator-facing, so super-admin only. A member of a tenant organization can\nreach none of these: Grafana wants a password they do not have, Jaeger and\nPrometheus are loopback-bound, and Langfuse holds every organization's\ntraces in one project - prompts and retrieved chunks included. Listing the\naddresses would describe the deployment's insides to someone who cannot use\nany of them.",
         "operationId": "observability_links_observability_links_get",
         "parameters": [
-          {
-            "name": "X-Org-Id",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Org-Id"
-            }
-          },
           {
             "name": "authorization",
             "in": "header",
@@ -883,6 +867,127 @@
         }
       }
     },
+    "/admin/services": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Services",
+        "operationId": "list_services_admin_services_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ManagedServiceDto"
+                  },
+                  "title": "Response List Services Admin Services Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/services/{name}": {
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Switch Service",
+        "operationId": "switch_service_admin_services__name__put",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceSwitch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedServiceDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/settings/providers": {
       "get": {
         "tags": [
@@ -1042,7 +1147,7 @@
           "settings"
         ],
         "summary": "List Models",
-        "description": "The model catalog: what the UI offers and what cost accounting uses.",
+        "description": "The model catalog: what the UI offers and what cost accounting uses.\n\nThe yaml lists models the platform knows how to price. Whether a given\nembedding model can be selected is a property of this deployment, so it is\nanswered here rather than baked into the file.",
         "operationId": "list_models_settings_models_get",
         "parameters": [
           {
@@ -1214,6 +1319,82 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/EmbeddingSettingsUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmbeddingSettingsDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/settings/chunking": {
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Put Chunking Settings",
+        "description": "Change how documents are cut into chunks.\n\nNothing is re-cut here: the stored chunks stay until a reindex runs, and\nthe response says how many sources are now stale so the UI can offer it.",
+        "operationId": "put_chunking_settings_settings_chunking_put",
+        "parameters": [
+          {
+            "name": "X-Org-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Org-Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChunkingSettingsUpdate"
               }
             }
           }
@@ -5063,6 +5244,85 @@
         }
       }
     },
+    "/experiments/{experiment_id}": {
+      "delete": {
+        "tags": [
+          "ab"
+        ],
+        "summary": "Delete Experiment",
+        "description": "Discard an experiment. A running one has to be stopped first.\n\nThe split cannot be edited after creation, so getting it wrong used to be a\ndead end: the experiment sat there for good and the only way forward was to\ncreate another one beside it.",
+        "operationId": "delete_experiment_experiments__experiment_id__delete",
+        "parameters": [
+          {
+            "name": "experiment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Experiment Id"
+            }
+          },
+          {
+            "name": "X-Org-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Org-Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Delete Experiment Experiments  Experiment Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/experiments/{experiment_id}/stats": {
       "get": {
         "tags": [
@@ -5706,6 +5966,11 @@
             },
             "type": "array",
             "title": "Embedding"
+          },
+          "embedding_dimensions": {
+            "type": "integer",
+            "title": "Embedding Dimensions",
+            "default": 0
           }
         },
         "type": "object",
@@ -5814,6 +6079,42 @@
           "tokens"
         ],
         "title": "ChunkDto"
+      },
+      "ChunkStrategy": {
+        "type": "string",
+        "enum": [
+          "semantic",
+          "per-unit",
+          "fixed"
+        ],
+        "title": "ChunkStrategy",
+        "description": "How segment boundaries are treated.\n\nSEMANTIC  - pack neighbouring segments up to the budget, split anything\n            still oversized at paragraph and sentence boundaries. The\n            default, and the only one that actually aims for the budget.\nPER_UNIT  - one chunk per segment, never merged. Keeps a citation pinned\n            to exactly one page or one heading, at the cost of chunks\n            that are mostly far below the budget.\nFIXED     - ignore structure entirely and cut every N tokens. For uniform\n            machine output where headings mean nothing."
+      },
+      "ChunkingSettingsUpdate": {
+        "properties": {
+          "chunk_size": {
+            "type": "integer",
+            "maximum": 2000.0,
+            "minimum": 100.0,
+            "title": "Chunk Size"
+          },
+          "chunk_overlap": {
+            "type": "integer",
+            "maximum": 2000.0,
+            "minimum": 0.0,
+            "title": "Chunk Overlap"
+          },
+          "chunk_strategy": {
+            "$ref": "#/components/schemas/ChunkStrategy"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chunk_size",
+          "chunk_overlap",
+          "chunk_strategy"
+        ],
+        "title": "ChunkingSettingsUpdate"
       },
       "ComparisonDto": {
         "properties": {
@@ -6042,6 +6343,22 @@
             "const": "embedding",
             "title": "Kind",
             "default": "embedding"
+          },
+          "usable": {
+            "type": "boolean",
+            "title": "Usable",
+            "default": true
+          },
+          "unusable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unusable Reason"
           }
         },
         "type": "object",
@@ -6067,6 +6384,17 @@
             "type": "integer",
             "title": "Dimensions"
           },
+          "chunk_size": {
+            "type": "integer",
+            "title": "Chunk Size"
+          },
+          "chunk_overlap": {
+            "type": "integer",
+            "title": "Chunk Overlap"
+          },
+          "chunk_strategy": {
+            "$ref": "#/components/schemas/ChunkStrategy"
+          },
           "stale_sources": {
             "type": "integer",
             "title": "Stale Sources"
@@ -6081,10 +6409,14 @@
           "embedding_provider",
           "embedding_model",
           "dimensions",
+          "chunk_size",
+          "chunk_overlap",
+          "chunk_strategy",
           "stale_sources",
           "indexed_sources"
         ],
-        "title": "EmbeddingSettingsDto"
+        "title": "EmbeddingSettingsDto",
+        "description": "Everything that decides how the corpus is indexed, plus what is stale.\n\nChunking sits here rather than on a bot because sources belong to the\norganization and are shared between bots: one corpus, one way of cutting it."
       },
       "EmbeddingSettingsUpdate": {
         "properties": {
@@ -6531,6 +6863,109 @@
         ],
         "title": "MagicLinkVerifyRequest"
       },
+      "ManagedServiceDto": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "desired_state": {
+            "type": "string",
+            "enum": [
+              "on",
+              "off"
+            ],
+            "title": "Desired State"
+          },
+          "off_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Off At"
+          },
+          "observed_state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "running",
+                  "stopped",
+                  "partial",
+                  "starting",
+                  "stopping",
+                  "error"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed State"
+          },
+          "observed_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Detail"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "agent_reporting": {
+            "type": "boolean",
+            "title": "Agent Reporting"
+          },
+          "changed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Changed At"
+          },
+          "changed_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changed By Email"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "desired_state",
+          "off_at",
+          "observed_state",
+          "observed_detail",
+          "observed_at",
+          "agent_reporting",
+          "changed_at",
+          "changed_by_email"
+        ],
+        "title": "ManagedServiceDto"
+      },
       "McpServerCreate": {
         "properties": {
           "name": {
@@ -6890,6 +7325,10 @@
             ],
             "title": "Langfuse Url"
           },
+          "langfuse_switched_off": {
+            "type": "boolean",
+            "title": "Langfuse Switched Off"
+          },
           "prometheus_url": {
             "anyOf": [
               {
@@ -6915,6 +7354,7 @@
           "grafana_url",
           "jaeger_url",
           "langfuse_url",
+          "langfuse_switched_off",
           "prometheus_url",
           "sentry_enabled",
           "tracing_enabled"
@@ -7594,6 +8034,32 @@
         ],
         "title": "ScoreDto"
       },
+      "ServiceSwitch": {
+        "properties": {
+          "on": {
+            "type": "boolean",
+            "title": "On"
+          },
+          "auto_off_hours": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 72.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Off Hours"
+          }
+        },
+        "type": "object",
+        "required": [
+          "on"
+        ],
+        "title": "ServiceSwitch"
+      },
       "SitemapImport": {
         "properties": {
           "base_url": {
@@ -7763,6 +8229,17 @@
           "status": {
             "type": "string",
             "title": "Status"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
           },
           "children": {
             "items": {
@@ -8230,6 +8707,11 @@
           "traffic_percent": {
             "type": "integer",
             "title": "Traffic Percent"
+          },
+          "subjects": {
+            "type": "integer",
+            "title": "Subjects",
+            "default": 0
           },
           "calls": {
             "type": "integer",
