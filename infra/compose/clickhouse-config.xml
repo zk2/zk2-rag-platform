@@ -29,13 +29,15 @@
     <opentelemetry_span_log remove="1"/>
     <latency_log remove="1"/>
 
-    <!-- trace_log is gone, so the sampling profiler has nowhere to write. -->
-    <profiles>
-        <default>
-            <query_profiler_real_time_period_ns>0</query_profiler_real_time_period_ns>
-            <query_profiler_cpu_time_period_ns>0</query_profiler_cpu_time_period_ns>
-        </default>
-    </profiles>
+    <!-- No <profiles> block to turn the query profiler off, although the
+         Langfuse recipe has one. It is not needed: the server creates its
+         trace collector only when the config has trace_log (Server.cpp), and
+         a query profiler without a collector is never started
+         (ThreadStatusExt.cpp). It would not have worked here either: profiles
+         are read from the users config, and in config.d the block was
+         ignored - query_profiler_* stayed at their defaults on the first
+         deploy. -->
+
 
     <!-- Kept, but with a TTL, which neither ships with. part_log is the table
          that showed the merges described above, and both are small.

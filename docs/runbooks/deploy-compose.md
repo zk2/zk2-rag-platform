@@ -186,6 +186,16 @@ times a day, on a host with 12. ClickHouse sizes its own limit from the RAM of
 the machine, not of the container, so it never stopped itself. Set
 `max_server_memory_usage` to what the host actually leaves it.
 
+Changing the file later takes a recreate, not `make prod-up`. The mount spec
+stays the same, so `up -d` keeps the container; and a single-file bind mount
+is tied to the file's inode, while `git pull` writes a new file under the same
+name. The container goes on reading the old content, restart after restart:
+
+```bash
+docker compose --env-file .env.prod -f infra/compose/docker-compose.prod.yml --profile obs \
+  up -d --force-recreate langfuse-clickhouse
+```
+
 The config only stops writing. Tables already on disk stay, and the first start
 with it may also keep the old `query_log` and `part_log` under a numeric suffix,
 because their definition gained a TTL. List what is there, then drop what the
@@ -214,7 +224,9 @@ Checking that it took, right away and a day later:
 
 ```sql
 SELECT name, value FROM system.server_settings WHERE name = 'max_server_memory_usage';
-SELECT name, value FROM system.settings WHERE name LIKE 'query_profiler%';
+-- query_log and part_log carry the TTL once they have been recreated:
+SELECT name, position(engine_full, 'TTL') > 0 AS has_ttl FROM system.tables
+WHERE database = 'system' AND name IN ('query_log', 'part_log');
 -- a day later, expected 0:
 SELECT count() FROM system.part_log
 WHERE event_type = 'MergeParts' AND peak_memory_usage > 1073741824 AND event_time > now() - INTERVAL 1 DAY;
