@@ -1,0 +1,55 @@
+<!--
+  Server config for langfuse-clickhouse, mounted into config.d.
+
+  Why it exists. system.metric_log has about 1550 columns, one per metric. Its
+  parts are small - a few thousand rows - which is below the row threshold for
+  vertical merges, so every merge of it is horizontal and allocates buffers for
+  every column of every source part. Measured on the demo host in September
+  2026: 150-250 such merges a day at 6.3-6.9 GiB each, while the one vertical
+  merge of the same table, 586k rows, took 12 MiB. The host is a 12 GiB
+  container shared with the rest of the stack, and those spikes ran into its
+  memory ceiling.
+
+  ClickHouse could not guard against that itself. Under docker inside LXC it
+  does not see the container limit (CGroupMemoryTotal is 0) and sizes
+  max_server_memory_usage from the RAM of the whole machine: 56 GiB out of 62,
+  in a container that has 12.
+
+  Nothing reads the removed tables: Prometheus scrapes only the api. Removing
+  them and the TTLs below are Langfuse's own recipe, from the self-hosting docs
+  (Scaling, ClickHouse system log tables).
+-->
+<clickhouse>
+    <!-- remove="1" only stops writing. What is already on disk stays until it
+         is dropped by hand, see docs/runbooks/deploy-compose.md. -->
+    <metric_log remove="1"/>
+    <asynchronous_metric_log remove="1"/>
+    <trace_log remove="1"/>
+    <text_log remove="1"/>
+    <opentelemetry_span_log remove="1"/>
+    <latency_log remove="1"/>
+
+    <!-- trace_log is gone, so the sampling profiler has nowhere to write. -->
+    <profiles>
+        <default>
+            <query_profiler_real_time_period_ns>0</query_profiler_real_time_period_ns>
+            <query_profiler_cpu_time_period_ns>0</query_profiler_cpu_time_period_ns>
+        </default>
+    </profiles>
+
+    <!-- Kept, but with a TTL, which neither ships with. part_log is the table
+         that showed the merges described above, and both are small. -->
+    <query_log>
+        <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) TTL event_date + INTERVAL 30 DAY</engine>
+    </query_log>
+    <part_log>
+        <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) TTL event_date + INTERVAL 30 DAY</engine>
+    </part_log>
+
+    <!-- 6 GiB. A ceiling ClickHouse enforces on itself: past it a query or a
+         merge fails with MEMORY_LIMIT_EXCEEDED, instead of the kernel killing
+         the whole server. Without metric_log it runs in 300-500 MiB, and the
+         rest of the stack peaks at about 5 GiB of the demo host's 12. Size it
+         to the host this runs on. -->
+    <max_server_memory_usage>6442450944</max_server_memory_usage>
+</clickhouse>

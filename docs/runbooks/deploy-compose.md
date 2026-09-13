@@ -176,6 +176,50 @@ To run without any of it: `make prod-up PROD_PROFILES=`, and empty
 containers that are not running, the api retries every export forever and
 fills the log with it.
 
+### ClickHouse memory and its own logs
+
+`infra/compose/clickhouse-config.xml` removes ClickHouse's metric, trace and
+text logs, puts a 30-day TTL on `query_log` and `part_log`, and caps the server
+at 6 GiB. The file says why in detail; the short version is that merges of
+`system.metric_log`, a table of about 1550 columns, took over 6 GiB each, many
+times a day, on a host with 12. ClickHouse sizes its own limit from the RAM of
+the machine, not of the container, so it never stopped itself. Set
+`max_server_memory_usage` to what the host actually leaves it.
+
+The config only stops writing. Tables already on disk stay, and the first start
+with it may also keep the old `query_log` and `part_log` under a numeric suffix,
+because their engine changed. List what is there, then drop what the config
+removed:
+
+```bash
+docker compose --env-file .env.prod -f infra/compose/docker-compose.prod.yml --profile obs \
+  exec -T langfuse-clickhouse sh -c 'clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --multiquery' <<'SQL'
+SELECT name, formatReadableSize(total_bytes) AS size FROM system.tables WHERE database = 'system' AND name LIKE '%log%' ORDER BY name;
+SQL
+```
+
+```sql
+DROP TABLE IF EXISTS system.metric_log SYNC;
+DROP TABLE IF EXISTS system.asynchronous_metric_log SYNC;
+DROP TABLE IF EXISTS system.trace_log SYNC;
+DROP TABLE IF EXISTS system.text_log SYNC;
+DROP TABLE IF EXISTS system.opentelemetry_span_log SYNC;
+DROP TABLE IF EXISTS system.latency_log SYNC;
+-- only if the listing showed them:
+DROP TABLE IF EXISTS system.query_log_0 SYNC;
+DROP TABLE IF EXISTS system.part_log_0 SYNC;
+```
+
+Checking that it took, right away and a day later:
+
+```sql
+SELECT name, value FROM system.server_settings WHERE name = 'max_server_memory_usage';
+SELECT name, value FROM system.settings WHERE name LIKE 'query_profiler%';
+-- a day later, expected 0:
+SELECT count() FROM system.part_log
+WHERE event_type = 'MergeParts' AND peak_memory_usage > 1073741824 AND event_time > now() - INTERVAL 1 DAY;
+```
+
 ### Publishing Langfuse under its own name
 
 A tunnel is fine for an incident and tiresome for daily use. Setting
