@@ -204,6 +204,9 @@ services:
     restart: unless-stopped
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
+      # Traces live in memory, and by default without a limit: the container
+      # grew to 1.5 GB in five days. Past this many the oldest are dropped.
+      MEMORY_MAX_TRACES: "20000"
     ports:
       - "${OBS_BIND:-127.0.0.1}:16686:16686"
 

@@ -31,8 +31,9 @@ if TYPE_CHECKING:
     from fastapi import FastAPI
     from opentelemetry.trace.span import TraceState
 
-#: Endpoints polled on a timer by machines, not people.
-_UNINTERESTING_PATHS = ("/health", "/metrics")
+#: Endpoints polled on a timer by machines, not people. The ops agent reports
+#: every five seconds; traced, it was 95% of everything Jaeger held.
+_UNINTERESTING_PATHS = ("/health", "/metrics", "/ops/agent/")
 
 
 class _DropPlumbing(Sampler):

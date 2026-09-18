@@ -203,6 +203,9 @@ def test_the_sampler_keeps_a_request_and_drops_the_plumbing() -> None:
 
     assert decide(kind=SpanKind.SERVER, attributes={"url.path": "/health"}) is Decision.DROP
     assert decide(kind=SpanKind.SERVER, attributes={"url.path": "/metrics"}) is Decision.DROP
+    assert (
+        decide(kind=SpanKind.SERVER, attributes={"url.path": "/ops/agent/report"}) is Decision.DROP
+    )
     assert decide(name="LLEN", kind=SpanKind.CLIENT) is Decision.DROP
     assert (
         decide(kind=SpanKind.SERVER, attributes={"url.path": "/bots/1/chat"})
