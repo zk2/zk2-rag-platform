@@ -2,7 +2,7 @@
 """Start and stop managed services to match the switches in the admin panel.
 
 Runs on the deployment host as a systemd service (`make prod-agent-install`).
-Every few seconds it looks at which containers are running, reports that to the
+Every thirty seconds it looks at which containers are running, reports that to the
 API, and gets back the state a super-admin asked for. When the two differ it
 runs docker compose to close the gap.
 
@@ -55,10 +55,12 @@ SERVICES: dict[str, list[str]] = {
     ],
 }
 
-INTERVAL_SECONDS = float(os.environ.get("ZK2_OPS_AGENT_INTERVAL", "5"))
+# Each tick runs docker compose twice. Every five seconds that came to 4% of a
+# core around the clock; a switch applied half a minute later costs nothing.
+INTERVAL_SECONDS = float(os.environ.get("ZK2_OPS_AGENT_INTERVAL", "30"))
 # A first start may pull images, which takes minutes rather than seconds
 ACTION_TIMEOUT_SECONDS = 900
-# A compose command that failed is not retried every few seconds
+# A compose command that failed is not retried on every tick
 RETRY_AFTER_FAILURE_SECONDS = 60
 
 _REPORT = (

@@ -186,7 +186,7 @@ switch in the admin panel under **Services**.
 
 The API does not start or stop anything: Docker access is root on the host, and
 the API is the process facing the internet. It records the switch. An agent on
-the host, `scripts/ops-agent.py`, reports every few seconds what is running,
+the host, `scripts/ops-agent.py`, reports every thirty seconds what is running,
 gets the switch back in the same call, and runs `docker compose up -d` or `stop`
 for the Langfuse services. It reaches the API through `docker compose exec api`,
 so nothing is published for it, and Caddy answers 404 for `/api/ops/agent/*`.

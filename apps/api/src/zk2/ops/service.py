@@ -33,9 +33,10 @@ logger = structlog.get_logger()
 LANGFUSE = "langfuse"
 KNOWN_SERVICES: tuple[str, ...] = (LANGFUSE,)
 
-# The agent reports every few seconds. A minute of silence means it is not
-# running, and a switch flipped now would change nothing on the host.
-AGENT_STALE_AFTER = timedelta(seconds=60)
+# The agent reports every thirty seconds. Two minutes of silence - more than
+# one slow report - means it is not running, and a switch flipped now would
+# change nothing on the host.
+AGENT_STALE_AFTER = timedelta(seconds=120)
 
 _FOLLOW_INTERVAL_SECONDS = 15.0
 
