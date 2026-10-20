@@ -21,7 +21,7 @@ from zk2.config import get_settings
 from zk2.core.db import db_session, dispose_engine
 from zk2.core.logging import configure_logging
 from zk2.core.tracing import flush_traces
-from zk2.evals.runner import RunSettings, execute_run
+from zk2.evals.runner import DEFAULT_JUDGE_MODEL, RunSettings, execute_run
 from zk2.ops.service import follow_langfuse_switch
 from zk2.retrieval.rerank import warm_up as rerank_warm_up
 from zk2.sources.ingest import ingest_source as _ingest_source
@@ -43,7 +43,7 @@ async def run_eval(_: dict[str, Any], run_id: int, settings: dict[str, Any]) -> 
             settings=RunSettings(
                 metrics=settings.get("metrics", []),
                 judge_provider=settings.get("judge_provider", "openai"),
-                judge_model=settings.get("judge_model", "gpt-4.1-mini"),
+                judge_model=settings.get("judge_model", DEFAULT_JUDGE_MODEL),
             ),
         )
 

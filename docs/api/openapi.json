@@ -5711,7 +5711,7 @@
           "llm_model": {
             "type": "string",
             "title": "Llm Model",
-            "default": "gpt-4o-mini"
+            "default": "gpt-6-luna"
           },
           "temperature": {
             "type": "number",
@@ -6023,6 +6023,17 @@
             "type": "boolean",
             "title": "Supports Temperature",
             "default": true
+          },
+          "reasoning_effort": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Effort"
           },
           "price_in_per_mtok": {
             "type": "string",
@@ -7949,7 +7960,7 @@
           "judge_model": {
             "type": "string",
             "title": "Judge Model",
-            "default": "gpt-4.1-mini"
+            "default": "gpt-6-luna"
           },
           "mark_baseline": {
             "type": "boolean",

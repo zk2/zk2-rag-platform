@@ -36,6 +36,10 @@ class ChatModel(BaseModel):
     # Sampling parameters were removed on the newest Claude models: sending
     # temperature to them is a 400, so the adapter has to know.
     supports_temperature: bool = True
+    # Sent as-is to models that reason. None means the model has no such
+    # setting and nothing is sent; for gpt-6-luna it has to be "none", or
+    # temperature and function tools are refused.
+    reasoning_effort: str | None = None
     price_in_per_mtok: Decimal
     price_out_per_mtok: Decimal
     kind: Literal["chat"] = "chat"

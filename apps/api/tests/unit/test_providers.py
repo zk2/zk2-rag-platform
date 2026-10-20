@@ -252,6 +252,15 @@ def fake_openai(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
             usage = (95, 12) if kwargs.get("stream_options", {}).get("include_usage") else None
             return FakeOpenAIStream(["Alpha ", "is a letter."], usage)
 
+        async def create(self, **kwargs: Any) -> SimpleNamespace:
+            seen.update(kwargs)
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(message=SimpleNamespace(content="Alpha."), finish_reason="stop")
+                ],
+                usage=SimpleNamespace(prompt_tokens=20, completion_tokens=3),
+            )
+
     monkeypatch.setattr(
         "zk2.llm.openai_provider.AsyncOpenAI",
         lambda **_kwargs: SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions())),
@@ -276,3 +285,38 @@ async def test_openai_prices_a_streamed_call(fake_openai: dict[str, Any]) -> Non
     cost = provider.estimate_cost("gpt-4.1-mini", tokens_in=95, tokens_out=12)
     assert cost is not None
     assert cost > 0
+
+
+async def test_openai_sends_the_length_cap_under_its_current_name(
+    fake_openai: dict[str, Any],
+) -> None:
+    """The gpt-6 models refuse max_tokens with a 400; every model takes this one."""
+    await _collect(OpenAIProvider(api_key="sk-test"), model="gpt-4.1-mini", max_tokens=300)
+    assert fake_openai["max_completion_tokens"] == 300
+    assert "max_tokens" not in fake_openai
+    assert "reasoning_effort" not in fake_openai
+
+
+async def test_openai_turns_reasoning_off_where_the_catalog_says(
+    fake_openai: dict[str, Any],
+) -> None:
+    """Reasoning on, Luna refuses temperature 0 - and a judge's few hundred
+    tokens go to thinking, leaving an empty reply."""
+    await _collect(OpenAIProvider(api_key="sk-test"), model="gpt-6-luna", stream=False)
+    assert fake_openai["reasoning_effort"] == "none"
+    assert fake_openai["temperature"] == 0.0
+
+
+async def test_openai_non_streaming_reports_usage(fake_openai: dict[str, Any]) -> None:
+    """The eval judge calls this way, and its cost is counted from these numbers."""
+    chunks = await _collect(OpenAIProvider(api_key="sk-test"), model="gpt-6-luna", stream=False)
+    assert chunks[-1].delta == "Alpha."
+    assert (chunks[-1].tokens_in, chunks[-1].tokens_out) == (20, 3)
+
+
+async def test_openai_leaves_out_what_was_not_asked_for(fake_openai: dict[str, Any]) -> None:
+    """A model outside the catalog - a custom endpoint's - gets the plain request."""
+    await _collect(OpenAIProvider(api_key="sk-test"), model="local-model", stream=False)
+    assert "max_completion_tokens" not in fake_openai
+    assert "reasoning_effort" not in fake_openai
+    assert fake_openai["temperature"] == 0.0

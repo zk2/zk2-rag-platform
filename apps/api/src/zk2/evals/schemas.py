@@ -56,7 +56,7 @@ class RunStart(BaseModel):
     # Judge metrics cost a model call per item, so they are opt-in
     metrics: list[str] = Field(default_factory=lambda: list(DETERMINISTIC_METRICS))
     judge_provider: str = "openai"
-    judge_model: str = "gpt-4.1-mini"
+    judge_model: str = "gpt-6-luna"
     mark_baseline: bool = False
 
 

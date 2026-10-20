@@ -202,7 +202,7 @@ async def main(ingest: bool) -> None:
                     "concrete, and say when the handbook does not cover something."
                 ),
                 llm_provider="openai",
-                llm_model="gpt-4.1-mini",
+                llm_model="gpt-6-luna",
                 num_k=5,
                 source_ids=source_ids,
             ),

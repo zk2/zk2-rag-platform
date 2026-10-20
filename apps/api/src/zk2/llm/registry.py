@@ -94,6 +94,12 @@ async def require_api_key(db: AsyncSession, *, org_id: int, provider: str) -> st
     return (await require_key(db, org_id, provider)).value
 
 
+async def custom_base_url(db: AsyncSession, *, org_id: int, provider: str) -> str | None:
+    """The org's own endpoint for a provider, or None for the provider's default."""
+    row = await _get_config(db, org_id, provider)
+    return row.custom_base_url if row else None
+
+
 async def require_key(db: AsyncSession, org_id: int, provider: str) -> ResolvedKey:
     """Resolve a key, refusing a shared one once the allowance is spent."""
     resolved = await _resolve_key(db, org_id, provider)

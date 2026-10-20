@@ -12,6 +12,7 @@ The runner reports that cost rather than hiding it.
 from __future__ import annotations
 
 import time
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -24,7 +25,7 @@ from zk2.core.errors import NotFoundError, ValidationError
 from zk2.core.tracing import start_turn
 from zk2.evals.metrics import METRICS_BY_NAME, EvalSample
 from zk2.evals.models import EvalItem, EvalRun, EvalScore
-from zk2.llm.base import LLMProvider
+from zk2.llm.base import CompletionChunk, LLMProvider, Message
 from zk2.llm.registry import get_llm_provider
 from zk2.pipelines.dag import DagSpec
 from zk2.pipelines.defaults import DEFAULT_DAG
@@ -34,7 +35,7 @@ from zk2.pipelines.state import NodeContext, PipelineState
 
 logger = structlog.get_logger()
 
-DEFAULT_JUDGE_MODEL = "gpt-4.1-mini"
+DEFAULT_JUDGE_MODEL = "gpt-6-luna"
 
 
 @dataclass(slots=True)
@@ -42,6 +43,43 @@ class RunSettings:
     metrics: list[str]
     judge_provider: str = "openai"
     judge_model: str = DEFAULT_JUDGE_MODEL
+
+
+class _MeteredJudge(LLMProvider):
+    """A judge that adds up what it costs.
+
+    Metrics only want a score back, so the price of asking is collected here
+    rather than threaded through every metric. A call the catalog cannot price
+    adds nothing, as an unpriced pipeline turn does.
+    """
+
+    def __init__(self, inner: LLMProvider) -> None:
+        self.name = inner.name
+        self._inner = inner
+        self.cost_usd = Decimal(0)
+
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        model: str,
+        stream: bool = True,
+        temperature: float = 0.0,
+        max_tokens: int | None = None,
+    ) -> AsyncIterator[CompletionChunk]:
+        async for chunk in self._inner.complete(
+            messages, model=model, stream=stream, temperature=temperature, max_tokens=max_tokens
+        ):
+            if chunk.tokens_in is not None or chunk.tokens_out is not None:
+                cost = self._inner.estimate_cost(
+                    model, tokens_in=chunk.tokens_in or 0, tokens_out=chunk.tokens_out or 0
+                )
+                if cost is not None:
+                    self.cost_usd += cost
+            yield chunk
+
+    def estimate_cost(self, model: str, *, tokens_in: int, tokens_out: int) -> Decimal | None:
+        return self._inner.estimate_cost(model, tokens_in=tokens_in, tokens_out=tokens_out)
 
 
 async def _dag_for_run(db: AsyncSession, run: EvalRun, bot: Bot) -> DagSpec:
@@ -171,11 +209,13 @@ async def execute_run(db: AsyncSession, *, run_id: int, settings: RunSettings) -
         .all()
     )
 
-    judge: LLMProvider | None = None
+    judge: _MeteredJudge | None = None
     if any(
         METRICS_BY_NAME[name].needs_judge for name in settings.metrics if name in METRICS_BY_NAME
     ):
-        judge = await get_llm_provider(db, org_id=run.org_id, provider=settings.judge_provider)
+        judge = _MeteredJudge(
+            await get_llm_provider(db, org_id=run.org_id, provider=settings.judge_provider)
+        )
 
     run.status = "running"
     run.items_total = len(items)
@@ -232,6 +272,8 @@ async def execute_run(db: AsyncSession, *, run_id: int, settings: RunSettings) -
         run.items_done += 1
         await db.commit()
 
+    if judge is not None:
+        total_cost += judge.cost_usd
     _finish(run, all_scores, total_cost=total_cost, started=started, items=len(items))
     await db.flush()
     logger.info(

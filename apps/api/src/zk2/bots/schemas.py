@@ -15,7 +15,7 @@ class BotCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     system_prompt: str | None = Field(None, max_length=20_000)
     llm_provider: str = Field("openai")
-    llm_model: str = Field("gpt-4o-mini")
+    llm_model: str = Field("gpt-6-luna")
     temperature: float = Field(0, ge=0, le=2)
     num_k: int = Field(5, ge=1, le=20)
     source_ids: list[int] = []

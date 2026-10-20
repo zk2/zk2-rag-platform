@@ -55,7 +55,27 @@ chat:
     price_in_per_mtok: "1.00"
     price_out_per_mtok: "5.00"
 
-  # ─── OpenAI ────────────────────────────────────────────────────────
+  # ─── OpenAI (verified 2026-10-20) ──────────────────────────────────
+  # Prices are the short-context tier. Above 272K input tokens OpenAI bills
+  # the whole request at 2x input and 1.5x output; estimate_cost does not
+  # model that, and RAG prompts here are a few thousand tokens.
+  #
+  # Luna reasons by default, and while it does it rejects temperature and
+  # refuses function tools in Chat Completions; reasoning_effort "none" turns
+  # that off and makes it a drop-in for the gpt-4 models below.
+  - id: gpt-6-luna
+    provider: openai
+    display_name: GPT-6 Luna
+    context_window: 1050000
+    max_output_tokens: 128000
+    supports_tools: true
+    supports_vision: true
+    reasoning_effort: "none"
+    price_in_per_mtok: "0.10"
+    price_out_per_mtok: "0.50"
+
+  # Shut down by OpenAI on 2027-01-14 (replacement: gpt-6-luna). Kept until
+  # no bot version points at them - an unknown model is priced as unknown.
   - id: gpt-4.1
     provider: openai
     display_name: GPT-4.1
@@ -63,8 +83,8 @@ chat:
     max_output_tokens: 32768
     supports_tools: true
     supports_vision: true
-    price_in_per_mtok: "3.00"
-    price_out_per_mtok: "12.00"
+    price_in_per_mtok: "2.00"
+    price_out_per_mtok: "8.00"
 
   - id: gpt-4.1-mini
     provider: openai

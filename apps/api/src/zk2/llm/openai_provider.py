@@ -16,6 +16,25 @@ from zk2.llm.catalog import get_catalog
 from zk2.llm.errors import provider_call
 
 
+def _request_options(model: str, *, temperature: float, max_tokens: int | None) -> dict[str, Any]:
+    """Sampling and length parameters this model accepts.
+
+    max_completion_tokens rather than max_tokens: the gpt-6 models refuse the
+    old name and the gpt-4 ones take both. A reasoning model refuses any
+    temperature but the default unless its reasoning is off, so the catalog
+    decides both.
+    """
+    spec = get_catalog().chat_model(model)
+    options: dict[str, Any] = {}
+    if max_tokens is not None:
+        options["max_completion_tokens"] = max_tokens
+    if spec is None or spec.supports_temperature:
+        options["temperature"] = temperature
+    if spec is not None and spec.reasoning_effort is not None:
+        options["reasoning_effort"] = spec.reasoning_effort
+    return options
+
+
 class OpenAIProvider(LLMProvider):
     name = "openai"
 
@@ -32,13 +51,13 @@ class OpenAIProvider(LLMProvider):
         max_tokens: int | None = None,
     ) -> AsyncIterator[CompletionChunk]:
         payload_messages = [{"role": m.role, "content": m.content} for m in messages]
+        options = _request_options(model, temperature=temperature, max_tokens=max_tokens)
         async with provider_call(self.name):
             if not stream:
                 resp = await self._client.chat.completions.create(
                     model=model,
                     messages=payload_messages,  # type: ignore[arg-type]
-                    temperature=temperature,
-                    max_tokens=max_tokens,
+                    **options,
                 )
                 choice = resp.choices[0]
                 yield CompletionChunk(
@@ -52,8 +71,7 @@ class OpenAIProvider(LLMProvider):
             async with self._client.chat.completions.stream(
                 model=model,
                 messages=payload_messages,  # type: ignore[arg-type]
-                temperature=temperature,
-                max_tokens=max_tokens,
+                **options,
                 # A streamed response carries no usage unless it is asked for,
                 # and the SDK does not ask on its own. Without this every
                 # streamed call is accounted for as zero tokens and zero cost.

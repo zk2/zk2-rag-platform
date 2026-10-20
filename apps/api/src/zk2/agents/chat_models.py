@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from zk2.core.errors import ValidationError
 from zk2.llm.catalog import get_catalog
-from zk2.llm.registry import require_api_key
+from zk2.llm.registry import custom_base_url, require_api_key
 
 logger = structlog.get_logger()
 
@@ -49,6 +49,9 @@ async def build_chat_model(
         raise ValidationError(f"{model} does not support tool use")
 
     api_key = await require_api_key(db, org_id=org_id, provider=provider)
+    # The same endpoint the plain completion path uses - an org that points
+    # OpenAI at a compatible server means it for agents too
+    base_url = await custom_base_url(db, org_id=org_id, provider=provider)
     supports_temperature = spec.supports_temperature if spec else True
     cap = spec.max_output_tokens if spec and spec.max_output_tokens else None
     budget = min(max_tokens or DEFAULT_MAX_OUTPUT_TOKENS, cap or DEFAULT_MAX_OUTPUT_TOKENS)
@@ -59,13 +62,19 @@ async def build_chat_model(
         return ChatOpenAI(
             model=model,
             api_key=api_key,
+            base_url=base_url,
             temperature=temperature if supports_temperature else None,
             max_completion_tokens=budget,
+            # gpt-6-luna takes function tools in Chat Completions only with
+            # its reasoning off; the catalog says so, see ChatModel
+            reasoning_effort=spec.reasoning_effort if spec else None,
         )
 
     from langchain_anthropic import ChatAnthropic  # noqa: PLC0415  (heavy import)
 
     kwargs: dict[str, object] = {"model": model, "api_key": api_key, "max_tokens": budget}
+    if base_url:
+        kwargs["base_url"] = base_url
     # Sampling was removed on the current Claude models: sending it is a 400
     if supports_temperature:
         kwargs["temperature"] = temperature

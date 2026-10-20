@@ -103,7 +103,7 @@ function CreateBotCard() {
     "You are a helpful assistant grounded in the attached sources.",
   );
   const catalog = useCatalog();
-  const [model, setModel] = useState("gpt-4o-mini");
+  const [model, setModel] = useState("gpt-6-luna");
   const selectedModel = catalog.data?.chat.find((m) => m.id === model);
   const [numK, setNumK] = useState(5);
   const [selected, setSelected] = useState<number[]>([]);

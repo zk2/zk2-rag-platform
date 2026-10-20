@@ -53,6 +53,29 @@ def test_cost_of_a_small_call_keeps_six_decimals() -> None:
     assert cost == Decimal("0.000450")
 
 
+def test_gpt_4_1_is_priced_as_openai_lists_it() -> None:
+    # $2.00 in / $8.00 out; the catalog said $3 / $12 until 2026-10-20
+    cost = estimate_cost("gpt-4.1", tokens_in=1_000_000, tokens_out=1_000_000)
+    assert cost == Decimal("10.000000")
+
+
+def test_luna_runs_with_its_reasoning_off() -> None:
+    """The replacement for the gpt-4 models only behaves like one this way."""
+    model = get_catalog().chat_model("gpt-6-luna")
+    assert model is not None
+    assert model.reasoning_effort == "none"
+    assert model.supports_tools is True
+    assert estimate_cost("gpt-6-luna", tokens_in=1_000_000, tokens_out=1_000_000) == Decimal(
+        "0.600000"
+    )
+
+
+def test_models_without_a_reasoning_setting_send_none() -> None:
+    model = get_catalog().chat_model("gpt-4.1-mini")
+    assert model is not None
+    assert model.reasoning_effort is None
+
+
 def test_unknown_model_cost_is_none_not_zero() -> None:
     """Zero would silently under-report spend; None says 'we do not know'."""
     assert estimate_cost("some-new-model", tokens_in=1000, tokens_out=1000) is None
