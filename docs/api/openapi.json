@@ -6035,6 +6035,18 @@
             ],
             "title": "Reasoning Effort"
           },
+          "retires_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retires On"
+          },
           "price_in_per_mtok": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",

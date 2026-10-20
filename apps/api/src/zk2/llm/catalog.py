@@ -8,6 +8,7 @@ counted as zero, which is the failure mode worth avoiding in a billing path.
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
@@ -40,6 +41,9 @@ class ChatModel(BaseModel):
     # setting and nothing is sent; for gpt-6-luna it has to be "none", or
     # temperature and function tools are refused.
     reasoning_effort: str | None = None
+    # The day the provider shuts the model down. Until then it stays priced and
+    # a bot already on it keeps working, but nothing offers it for a new choice.
+    retires_on: date | None = None
     price_in_per_mtok: Decimal
     price_out_per_mtok: Decimal
     kind: Literal["chat"] = "chat"

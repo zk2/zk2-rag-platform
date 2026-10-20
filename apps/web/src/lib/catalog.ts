@@ -14,6 +14,8 @@ export type ChatModel = {
   supports_tools: boolean;
   supports_vision: boolean;
   supports_temperature: boolean;
+  /** ISO date the provider shuts the model down, or null. */
+  retires_on: string | null;
   price_in_per_mtok: string;
   price_out_per_mtok: string;
 };
@@ -43,6 +45,24 @@ export function useCatalog() {
     queryFn: () => api.get<Catalog>("/settings/models"),
     staleTime: 60 * 60 * 1000,
   });
+}
+
+/**
+ * Models a selector should offer. A retiring model is left out unless it is
+ * the one already chosen, since a bot still on it has to show what it runs.
+ * The API still accepts one until the shutdown date, which is the way back.
+ */
+export function selectableChatModels(
+  models: ChatModel[],
+  current?: string,
+): ChatModel[] {
+  return models.filter((m) => !m.retires_on || m.id === current);
+}
+
+export function modelLabel(model: ChatModel): string {
+  return model.retires_on
+    ? `${model.display_name} (retires ${model.retires_on})`
+    : model.display_name;
 }
 
 export function formatPrice(model: ChatModel): string {

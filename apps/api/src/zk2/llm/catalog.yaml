@@ -74,8 +74,9 @@ chat:
     price_in_per_mtok: "0.10"
     price_out_per_mtok: "0.50"
 
-  # Shut down by OpenAI on 2027-01-14 (replacement: gpt-6-luna). Kept until
-  # no bot version points at them - an unknown model is priced as unknown.
+  # Shut down by OpenAI on 2027-01-14 (replacement: gpt-6-luna). The UI no
+  # longer offers them; they stay until then so a bot rolled back to one
+  # through the API is still priced. Delete them after that date.
   - id: gpt-4.1
     provider: openai
     display_name: GPT-4.1
@@ -83,6 +84,7 @@ chat:
     max_output_tokens: 32768
     supports_tools: true
     supports_vision: true
+    retires_on: 2027-01-14
     price_in_per_mtok: "2.00"
     price_out_per_mtok: "8.00"
 
@@ -93,6 +95,7 @@ chat:
     max_output_tokens: 32768
     supports_tools: true
     supports_vision: true
+    retires_on: 2027-01-14
     price_in_per_mtok: "0.40"
     price_out_per_mtok: "1.60"
 
@@ -103,6 +106,7 @@ chat:
     max_output_tokens: 16384
     supports_tools: true
     supports_vision: true
+    retires_on: 2027-01-14
     price_in_per_mtok: "2.50"
     price_out_per_mtok: "10.00"
 
@@ -113,6 +117,7 @@ chat:
     max_output_tokens: 16384
     supports_tools: true
     supports_vision: true
+    retires_on: 2027-01-14
     price_in_per_mtok: "0.15"
     price_out_per_mtok: "0.60"
 

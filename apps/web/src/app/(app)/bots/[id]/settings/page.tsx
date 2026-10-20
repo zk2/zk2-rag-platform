@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SourcePicker, type SourceNode } from "@/components/source-picker";
 import { api } from "@/lib/api";
-import { formatPrice, useCatalog } from "@/lib/catalog";
+import { formatPrice, modelLabel, selectableChatModels, useCatalog } from "@/lib/catalog";
 import { ArrowLeft, MessageSquare } from "lucide-react";
 
 type Bot = {
@@ -195,19 +195,26 @@ export default function BotSettingsPage({ params }: { params: Promise<{ id: stri
               onChange={(e) => patch({ llm_model: e.target.value })}
               className="w-full h-9 rounded border border-slate-300 px-2 text-sm bg-white"
             >
-              {catalog.data?.chat.map((m) => (
+              {selectableChatModels(catalog.data?.chat ?? [], form.llm_model).map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.display_name} — {m.provider}
+                  {modelLabel(m)} — {m.provider}
                 </option>
               ))}
               {!catalog.data && <option value={form.llm_model}>{form.llm_model}</option>}
             </select>
-            {model ? (
+            {model && (
               <p className="mt-1 text-[10px] text-slate-500">
                 {(model.context_window / 1000).toFixed(0)}k context · {formatPrice(model)}
                 {model.supports_vision ? " · vision" : ""}
               </p>
-            ) : (
+            )}
+            {model?.retires_on && (
+              <p className="mt-1 text-[10px] text-amber-700">
+                The provider shuts this model down on {model.retires_on}; after that the bot
+                stops answering. Pick another model before then.
+              </p>
+            )}
+            {!model && (
               <p className="mt-1 text-[10px] text-amber-700">
                 Not in the catalog: cost cannot be calculated for this model.
               </p>

@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import { SourcePicker, type SourceNode } from "@/components/source-picker";
-import { formatPrice, useCatalog } from "@/lib/catalog";
+import { formatPrice, selectableChatModels, useCatalog } from "@/lib/catalog";
 import { Trash2, MessageSquare, Settings, FlaskConical } from "lucide-react";
 
 type Bot = {
@@ -160,7 +160,7 @@ function CreateBotCard() {
               onChange={(e) => setModel(e.target.value)}
               className="w-full h-9 rounded border border-slate-300 px-2 text-sm bg-white"
             >
-              {catalog.data?.chat.map((m) => (
+              {selectableChatModels(catalog.data?.chat ?? [], model).map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.display_name}
                 </option>

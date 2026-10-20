@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -74,6 +75,15 @@ def test_models_without_a_reasoning_setting_send_none() -> None:
     model = get_catalog().chat_model("gpt-4.1-mini")
     assert model is not None
     assert model.reasoning_effort is None
+
+
+def test_the_models_openai_shuts_down_are_marked_and_still_priced() -> None:
+    """Hidden from selection, but a bot rolled back to one is still billed."""
+    catalog = get_catalog()
+    retiring = {m.id for m in catalog.chat if m.retires_on is not None}
+    assert retiring == {"gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini"}
+    assert all(m.retires_on == date(2027, 1, 14) for m in catalog.chat if m.id in retiring)
+    assert estimate_cost("gpt-4o-mini", tokens_in=1000, tokens_out=500) is not None
 
 
 def test_unknown_model_cost_is_none_not_zero() -> None:
